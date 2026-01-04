@@ -7,14 +7,14 @@ let db = null;
 
 async function getDb() {
   if (db) return db;
-  
+  console.log(path.join(process.cwd(), 'ev_stations.db'));
   db = await open({
     filename: path.join(process.cwd(), 'ev_stations.db'),
     driver: sqlite3.Database
   });
   
   return db;
-}
+}   
 
 export async function POST(request) {
   try {
@@ -34,7 +34,12 @@ export async function POST(request) {
     const database = await getDb();
     
     const query = `
-      SELECT COUNT(*) FROM 
+      SELECT Latitude, Longitude, "Status Code", "Access Code"
+      FROM ev_stations
+      WHERE Latitude BETWEEN ? AND ?
+        AND Longitude BETWEEN ? AND ?
+        AND "Status Code" = 'E'
+        AND "Access Code" = 'public';
     `;
 
     const stations = await database.all(query, [minLat, maxLat, minLng, maxLng]);
