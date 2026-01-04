@@ -12,6 +12,10 @@ const KeralMapAnalyzer = () => {
   const [polygon, setPolygon] = useState(null);
   const [stats, setStats] = useState(null);
   const [currentPath, setCurrentPath] = useState([]);
+  const [showPetrol, setShowPetrol] = useState(false);
+  const [showEv, setShowEv] = useState(false);
+  const petrolLayerRef = useRef(null);
+  const evLayerRef = useRef(null);
 
   // Real Kerala district data based on research
   const districtData = {
@@ -100,6 +104,80 @@ const KeralMapAnalyzer = () => {
     return Math.abs(area / 2) * 12321; // Rough km² conversion
   };
 
+  // Point-in-polygon (ray-casting) to test generated points
+  const pointInPolygon = (point, vs) => {
+    const x = point[1], y = point[0];
+    let inside = false;
+    for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+      const xi = vs[i][1], yi = vs[i][0];
+      const xj = vs[j][1], yj = vs[j][0];
+
+      const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi + 0.0) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  };
+
+  const randomPointInBounds = (bounds) => {
+    const lats = bounds.map(b => b[0]);
+    const lngs = bounds.map(b => b[1]);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLng = Math.min(...lngs);
+    const maxLng = Math.max(...lngs);
+    const lat = minLat + Math.random() * (maxLat - minLat);
+    const lng = minLng + Math.random() * (maxLng - minLng);
+    return [lat, lng];
+  };
+
+  const generateRandomPointsInPolygon = (polyCoords, count) => {
+    if (!polyCoords || polyCoords.length === 0) return [];
+    const points = [];
+    let attempts = 0;
+    while (points.length < count && attempts < count * 50) {
+      const p = randomPointInBounds(polyCoords);
+      if (pointInPolygon(p, polyCoords)) points.push(p);
+      attempts++;
+    }
+    return points;
+  };
+
+  const plotMarkers = (type) => {
+    if (!map) return;
+    // Decide count based on stats and type
+    const poly = currentPath.length >= 3 ? currentPath : null;
+    let points = [];
+    if (type === 'charging') {
+      const count = stats ? Math.max(1, stats.evStations) : 10;
+      points = poly ? generateRandomPointsInPolygon(poly, count) : generateRandomPointsInPolygon([[10.5,75.5],[11.5,75.5],[11.5,77.5],[10.5,77.5]], count);
+      const layer = L.layerGroup();
+      points.forEach((p, i) => {
+        const marker = L.circleMarker(p, { radius: 6, color: '#059669', fillColor: '#10b981', fillOpacity: 0.9 });
+        marker.bindPopup(`<strong>Charging Station</strong><br/>ID: CH-${i + 1}`);
+        layer.addLayer(marker);
+      });
+      layer.addTo(map);
+      setChargingLayer(layer);
+    } else if (type === 'petrol') {
+      // Estimate number of petrol stations from petrol vehicle count
+      const count = stats ? Math.max(3, Math.floor(stats.petrolVehicles / 2000)) : 20;
+      points = poly ? generateRandomPointsInPolygon(poly, count) : generateRandomPointsInPolygon([[10.5,75.5],[11.5,75.5],[11.5,77.5],[10.5,77.5]], count);
+      const layer = L.layerGroup();
+      points.forEach((p, i) => {
+        const marker = L.circleMarker(p, { radius: 5, color: '#b91c1c', fillColor: '#ef4444', fillOpacity: 0.9 });
+        marker.bindPopup(`<strong>Petrol Station</strong><br/>ID: P-${i + 1}`);
+        layer.addLayer(marker);
+      });
+      layer.addTo(map);
+      setPetrolLayer(layer);
+    }
+  };
+
+  const clearMarkerLayers = () => {
+    if (petrolLayer && map) { petrolLayer.remove(); setPetrolLayer(null); }
+    if (chargingLayer && map) { chargingLayer.remove(); setChargingLayer(null); }
+  };
+
   useEffect(() => {
     const mapInstance = L.map(mapRef.current).setView([10.8505, 76.2711], 8);
     
@@ -165,6 +243,19 @@ const KeralMapAnalyzer = () => {
       setStats(null);
       setCurrentPath([]);
       setDrawing(false);
+      // clear any markers
+      if (petrolLayerRef.current) {
+        petrolLayerRef.current.clearLayers();
+        petrolLayerRef.current.remove();
+        petrolLayerRef.current = null;
+      }
+      if (evLayerRef.current) {
+        evLayerRef.current.clearLayers();
+        evLayerRef.current.remove();
+        evLayerRef.current = null;
+      }
+      setShowPetrol(false);
+      setShowEv(false);
     }
   };
 
@@ -179,12 +270,94 @@ const KeralMapAnalyzer = () => {
     a.click();
   };
 
+  // Utility: point-in-polygon (ray-casting)
+  const isPointInPolygon = (point, vs) => {
+    const x = point[0], y = point[1];
+    let inside = false;
+    for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+      const xi = vs[i][0], yi = vs[i][1];
+      const xj = vs[j][0], yj = vs[j][1];
+
+      const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi + 0.0) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  };
+
+  const generateRandomPointInBounds = (bounds) => {
+    const latMin = Math.min(...bounds.map(b => b[0]));
+    const latMax = Math.max(...bounds.map(b => b[0]));
+    const lngMin = Math.min(...bounds.map(b => b[1]));
+    const lngMax = Math.max(...bounds.map(b => b[1]));
+    const lat = latMin + Math.random() * (latMax - latMin);
+    const lng = lngMin + Math.random() * (lngMax - lngMin);
+    return [lat, lng];
+  };
+
+  const generateStations = (bounds, count = 10, type = 'petrol') => {
+    if (!map) return null;
+    const markers = [];
+    let attempts = 0;
+    while (markers.length < count && attempts < count * 20) {
+      const pt = generateRandomPointInBounds(bounds);
+      if (isPointInPolygon(pt, bounds)) {
+        const marker = L.marker(pt, {
+          title: type === 'petrol' ? 'Petrol Station' : 'Charging Station',
+        });
+        markers.push(marker);
+      }
+      attempts++;
+    }
+    return markers;
+  };
+
+  const addPetrolMarkers = (bounds) => {
+    if (!map) return;
+    if (petrolLayerRef.current) petrolLayerRef.current.clearLayers();
+    const layer = L.layerGroup().addTo(map);
+    petrolLayerRef.current = layer;
+    const markers = generateStations(bounds, 12, 'petrol');
+    markers.forEach(m => {
+      m.addTo(layer).bindPopup('Petrol Station');
+    });
+  };
+
+  const addEvMarkers = (bounds) => {
+    if (!map) return;
+    if (evLayerRef.current) evLayerRef.current.clearLayers();
+    const layer = L.layerGroup().addTo(map);
+    evLayerRef.current = layer;
+    const markers = generateStations(bounds, 8, 'ev');
+    markers.forEach(m => {
+      m.addTo(layer).bindPopup('Charging Station');
+    });
+  };
+
   useEffect(() => {
     if (map) {
       map.on('click', handleMapClick);
       return () => map.off('click', handleMapClick);
     }
   }, [map, drawing, currentPath]);
+
+  // watch toggles
+  useEffect(() => {
+    if (!stats) return;
+    const bounds = currentPath;
+    if (showPetrol) addPetrolMarkers(bounds);
+    else if (petrolLayerRef.current) {
+      petrolLayerRef.current.clearLayers();
+    }
+  }, [showPetrol]);
+
+  useEffect(() => {
+    if (!stats) return;
+    const bounds = currentPath;
+    if (showEv) addEvMarkers(bounds);
+    else if (evLayerRef.current) {
+      evLayerRef.current.clearLayers();
+    }
+  }, [showEv]);
 
   return (
     <div className="h-screen w-full flex flex-col bg-gray-50">
@@ -213,6 +386,41 @@ const KeralMapAnalyzer = () => {
                 Finish Polygon
               </button>
             )}
+            {/* Toggle markers */}
+            <button
+              onClick={() => {
+                const next = !showEv;
+                setShowEv(next);
+                if (!next) {
+                  if (evLayerRef.current) { evLayerRef.current.clearLayers(); evLayerRef.current.remove(); evLayerRef.current = null; }
+                } else {
+                  addEvMarkers(currentPath);
+                }
+              }}
+              disabled={!stats}
+              title={!stats ? 'Draw a polygon first' : 'Toggle charging stations'}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-medium ${!stats ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : (showEv ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-green-100 text-green-800 hover:bg-green-200')}`}
+            >
+              <Zap size={16} />
+              {showEv ? 'Hide Charging' : 'Show Charging'}
+            </button>
+            <button
+              onClick={() => {
+                const next = !showPetrol;
+                setShowPetrol(next);
+                if (!next) {
+                  if (petrolLayerRef.current) { petrolLayerRef.current.clearLayers(); petrolLayerRef.current.remove(); petrolLayerRef.current = null; }
+                } else {
+                  addPetrolMarkers(currentPath);
+                }
+              }}
+              disabled={!stats}
+              title={!stats ? 'Draw a polygon first' : 'Toggle petrol stations'}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-medium ${!stats ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : (showPetrol ? 'bg-yellow-600 text-white hover:bg-yellow-700' : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200')}`}
+            >
+              <Car size={16} />
+              {showPetrol ? 'Hide Petrol' : 'Show Petrol'}
+            </button>
             {polygon && (
               <>
                 <button
