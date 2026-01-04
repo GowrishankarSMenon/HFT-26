@@ -24,3 +24,27 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Ensure Leaflet map doesn't interfere with modals */
+.leaflet-container {
+  z-index: 0 !important;
+}
+
+.leaflet-pane {
+  z-index: auto !important;
+}
+
+/* Leaflet popups should still be above map but below modals */
+.leaflet-popup-pane {
+  z-index: 700 !important;
+}
+
+.leaflet-tooltip-pane {
+  z-index: 650 !important;
+}
+
+/* Leaflet controls */
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 1000 !important;
+}

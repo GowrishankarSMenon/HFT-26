@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import Header from './Header';
 import MapView from './MapView';
 import StatsPanel from './StatsPanel';
+import OptimalLocationModal from './OptimalLocationModal';
 import {
   generateStats,
   fetchStationsFromDB,
@@ -15,6 +16,8 @@ import {
 import { generateHeatMapLayer, addHeatMapLegend } from '../utils/heatMapLayer';
 import { fetchPopulationDensityData, calculatePopulationDensityCost } from '../utils/populationDensityLayer';
 import { fetchSubstationsData, calculateSubstationsCost, plotSubstationsOnMap } from '../utils/substationsLayer';
+import { fetchAdoptionLikelihoodData, calculateAdoptionLikelihoodCost, plotAdoptionCentersOnMap } from '../utils/adoptionLikelihoodLayer';
+import { findOptimalLocations, plotOptimalLocations } from '../utils/optimalLocationFinder';
 
 const KeralMapAnalyzer = () => {
   const mapRef = useRef(null);
@@ -32,11 +35,15 @@ const KeralMapAnalyzer = () => {
   const [showHeatMap, setShowHeatMap] = useState(false);
   const [showDensityLayer, setShowDensityLayer] = useState(false);
   const [showSubstationsLayer, setShowSubstationsLayer] = useState(false);
+  const [showAdoptionLayer, setShowAdoptionLayer] = useState(false);
+  const [showOptimalModal, setShowOptimalModal] = useState(false);
   const gridLayerRef = useRef(null);
   const heatMapLayerRef = useRef(null);
   const heatMapLegendRef = useRef(null);
   const currentCellsRef = useRef(null);
   const substationsLayerRef = useRef(null);
+  const adoptionLayerRef = useRef(null);
+  const optimalLocationsLayerRef = useRef(null);
 
   useEffect(() => {
     const mapInstance = L.map(mapRef.current).setView([10.8505, 76.2711], 8);
@@ -181,6 +188,19 @@ const KeralMapAnalyzer = () => {
       substationsLayerRef.current = plotSubstationsOnMap(map, substationsData);
     }
 
+    // Fetch adoption likelihood data from expanded area and calculate adoption cost if layer is enabled
+    if (showAdoptionLayer) {
+      const adoptionData = await fetchAdoptionLikelihoodData(currentPath, true);
+      console.log(`Applying adoption likelihood cost based on ${adoptionData.length} adoption zones (including surroundings)`);
+      cells = calculateAdoptionLikelihoodCost(cells, adoptionData);
+
+      // Plot adoption centers on map
+      if (adoptionLayerRef.current) {
+        adoptionLayerRef.current.remove();
+      }
+      adoptionLayerRef.current = plotAdoptionCentersOnMap(map, adoptionData);
+    }
+
     // Store cells for heat map toggle
     currentCellsRef.current = cells;
 
@@ -218,6 +238,8 @@ const KeralMapAnalyzer = () => {
       if (heatMapLayerRef.current) { heatMapLayerRef.current.remove(); heatMapLayerRef.current = null; }
       if (heatMapLegendRef.current) { heatMapLegendRef.current.remove(); heatMapLegendRef.current = null; }
       if (substationsLayerRef.current) { substationsLayerRef.current.remove(); substationsLayerRef.current = null; }
+      if (adoptionLayerRef.current) { adoptionLayerRef.current.remove(); adoptionLayerRef.current = null; }
+      if (optimalLocationsLayerRef.current) { optimalLocationsLayerRef.current.remove(); optimalLocationsLayerRef.current = null; }
       currentCellsRef.current = null;
       setShowPetrol(false);
       setShowCharging(false);
@@ -225,6 +247,7 @@ const KeralMapAnalyzer = () => {
       setShowHeatMap(false);
       setShowDensityLayer(false);
       setShowSubstationsLayer(false);
+      setShowAdoptionLayer(false);
     }
   };
 
@@ -375,7 +398,100 @@ const KeralMapAnalyzer = () => {
     }
   };
 
-  const handleToggleHeatMap = () => {
+  const handleToggleAdoptionLayer = async () => {
+    const next = !showAdoptionLayer;
+    setShowAdoptionLayer(next);
+
+    if (!currentPath || currentPath.length < 3) {
+      alert('Please draw and finish a polygon first');
+      setShowAdoptionLayer(false);
+      return;
+    }
+
+    // Recalculate costs with or without adoption layer
+    let cells = generateGridCells(currentPath);
+
+    // Always apply charging station proximity
+    const chargingStations = await fetchStationsFromDB(currentPath, 'charging', true);
+    cells = calculateChargingStationProximityCost(cells, chargingStations);
+
+    // Apply density cost if it's enabled
+    if (showDensityLayer) {
+      const densityData = await fetchPopulationDensityData(currentPath, true);
+      cells = calculatePopulationDensityCost(cells, densityData, chargingStations);
+    }
+
+    // Apply substations cost if it's enabled
+    if (showSubstationsLayer) {
+      const substationsData = await fetchSubstationsData(currentPath, true);
+      cells = calculateSubstationsCost(cells, substationsData);
+    }
+
+    // Apply adoption likelihood cost if toggled on (fetch from expanded area including surroundings)
+    if (next) {
+      const adoptionData = await fetchAdoptionLikelihoodData(currentPath, true);
+      console.log(`Toggling ON adoption likelihood layer with ${adoptionData.length} adoption zones (including surroundings)`);
+      cells = calculateAdoptionLikelihoodCost(cells, adoptionData);
+
+      // Plot adoption centers on map
+      if (adoptionLayerRef.current) {
+        adoptionLayerRef.current.remove();
+      }
+      adoptionLayerRef.current = plotAdoptionCentersOnMap(map, adoptionData);
+    } else {
+      console.log('Toggling OFF adoption likelihood layer');
+      // Remove adoption markers from map
+      if (adoptionLayerRef.current) {
+        adoptionLayerRef.current.remove();
+        adoptionLayerRef.current = null;
+      }
+    }
+
+    // Update stored cells
+    currentCellsRef.current = cells;
+
+    // Update heat map if it's currently showing
+    if (showHeatMap && heatMapLayerRef.current) {
+      heatMapLayerRef.current.remove();
+      heatMapLayerRef.current = generateHeatMapLayer(map, cells);
+    }
+
+    // Update grid if it's currently showing
+    if (showGrid && gridLayerRef.current) {
+      gridLayerRef.current.remove();
+      gridLayerRef.current = visualizeGridCells(map, cells);
+    }
+  };
+
+  const handleFindOptimalLocations = () => {
+    setShowOptimalModal(true);
+  };
+
+  const handleSubmitOptimalLocations = (n) => {
+    if (!currentCellsRef.current) {
+      alert('Please draw a polygon first to analyze the area.');
+      return;
+    }
+
+    if (!map) {
+      alert('Map is not initialized yet.');
+      return;
+    }
+
+    const locations = findOptimalLocations(currentCellsRef.current, n, 0.5);
+
+    if (locations.length === 0) {
+      alert('No valid locations found within the selected area.');
+      return;
+    }
+
+    if (optimalLocationsLayerRef.current) {
+      optimalLocationsLayerRef.current.remove();
+    }
+
+    optimalLocationsLayerRef.current = plotOptimalLocations(map, locations);
+    setShowOptimalModal(false);
+  }; const handleToggleHeatMap = () => {
     const next = !showHeatMap;
     setShowHeatMap(next);
 
@@ -437,6 +553,9 @@ const KeralMapAnalyzer = () => {
         onToggleDensityLayer={handleToggleDensityLayer}
         showSubstationsLayer={showSubstationsLayer}
         onToggleSubstationsLayer={handleToggleSubstationsLayer}
+        showAdoptionLayer={showAdoptionLayer}
+        onToggleAdoptionLayer={handleToggleAdoptionLayer}
+        onFindOptimalLocations={handleFindOptimalLocations}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -447,6 +566,11 @@ const KeralMapAnalyzer = () => {
         />
         <StatsPanel stats={stats} />
       </div>
+      <OptimalLocationModal
+        isOpen={showOptimalModal}
+        onClose={() => setShowOptimalModal(false)}
+        onFindLocations={handleSubmitOptimalLocations}
+      />
     </div>
   );
 };

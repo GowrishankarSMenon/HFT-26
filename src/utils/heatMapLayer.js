@@ -161,7 +161,7 @@ export const addHeatMapLegend = (map) => {
         </div>
       </div>
       <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-size: 10px; color: #6b7280;">
-        Based on charging stations, density & substations
+        Based on charging, density, substations & adoption
       </div>
     `;
 
