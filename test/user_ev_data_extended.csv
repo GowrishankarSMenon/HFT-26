@@ -1,0 +1,9 @@
+lat,long,ev_adoption_likelihood_score,density_per_km2,population,per_capita_income,city_name,data_source
+8.5241,76.9366,73.7,3520,1157549,290179,Thiruvananthapuram,user_uploadeds
+8.4005,77.0883,68.7,1569,257968,264946,Neyyattinkara,user_uploadeds
+8.6031,77.0008,68.7,1569,257968,264946,Nedumangad,user_uploadeds
+8.6969,76.8152,68.7,1569,171978,264946,Kattakada,user_uploadeds
+8.7379,76.7163,68.7,1569,171978,264946,Varkala,user_uploadeds
+9.9312,76.2673,80.5,2494,1147951,397660,Kochi,user_uploadeds
+10.0153,76.3478,70.6,1111,255828,363081,Aluva,user_uploadeds
+10.1081,76.3528,70.6,1111,170552,363081,Angamaly,user_uploadeds
