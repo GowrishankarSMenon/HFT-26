@@ -1,0 +1,1118 @@
+{
+  "state": "Kerala",
+  "last_updated": "2026-01",
+  "data_type": "Population Density, Income, Vehicle Ownership & EV Adoption Likelihood",
+  "note": "Approximated estimates based on official district-level data",
+  "methodology": {
+    "ev_adoption_likelihood": "Calculated using weighted factors: Income (40%), Density (30%), Vehicle Ownership (30%)",
+    "categories": "Very Low (<30), Low (30-45), Medium (45-60), High (60-75), Very High (75+)"
+  },
+  "districts": [
+    {
+      "district": "Thiruvananthapuram",
+      "corporations": [
+        {
+          "name": "Thiruvananthapuram",
+          "population": 1157549,
+          "density_per_km2": 3520,
+          "per_capita_income": 290179,
+          "vehicles_per_1000_people": 350,
+          "household_car_ownership_percent": 31.5,
+          "ev_adoption_likelihood_score": 73.7,
+          "ev_adoption_likelihood": "High",
+          "latitude": 8.5241,
+          "longitude": 76.9366
+        }
+      ],
+      "municipalities": [
+        {
+          "name": "Neyyattinkara",
+          "population": 257968,
+          "density_per_km2": 1569,
+          "per_capita_income": 264946,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 68.7,
+          "ev_adoption_likelihood": "High",
+          "latitude": 8.4005,
+          "longitude": 77.0883
+        },
+        {
+          "name": "Nedumangad",
+          "population": 257968,
+          "density_per_km2": 1569,
+          "per_capita_income": 264946,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 68.7,
+          "ev_adoption_likelihood": "High",
+          "latitude": 8.6031,
+          "longitude": 77.0008
+        },
+        {
+          "name": "Attingal",
+          "population": 171978,
+          "density_per_km2": 1569,
+          "per_capita_income": 264946,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 68.7,
+          "ev_adoption_likelihood": "High",
+          "latitude": 8.6969,
+          "longitude": 76.8152
+        },
+        {
+          "name": "Varkala",
+          "population": 171978,
+          "density_per_km2": 1569,
+          "per_capita_income": 264946,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 68.7,
+          "ev_adoption_likelihood": "High",
+          "latitude": 8.7379,
+          "longitude": 76.7163
+        },
+        {
+          "name": "Parassala",
+          "population": 171978,
+          "density_per_km2": 1569,
+          "per_capita_income": 264946,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 68.7,
+          "ev_adoption_likelihood": "High",
+          "latitude": 8.3167,
+          "longitude": 77.0667
+        }
+      ],
+      "panchayats": {
+        "count": 73,
+        "avg_density": 637,
+        "avg_income": 227097,
+        "avg_vehicles_per_1000": 220,
+        "ev_adoption_likelihood": "Medium",
+        "avg_population": 15313,
+        "household_car_ownership_percent": 20.6,
+        "ev_adoption_likelihood_score": 45.3
+      }
+    },
+    {
+      "district": "Ernakulam",
+      "corporations": [
+        {
+          "name": "Kochi",
+          "population": 1147951,
+          "density_per_km2": 2494,
+          "per_capita_income": 397660,
+          "vehicles_per_1000_people": 350,
+          "household_car_ownership_percent": 31.5,
+          "ev_adoption_likelihood_score": 80.5,
+          "ev_adoption_likelihood": "Very High",
+          "latitude": 9.9312,
+          "longitude": 76.2673
+        }
+      ],
+      "municipalities": [
+        {
+          "name": "Thrikkakara",
+          "population": 255828,
+          "density_per_km2": 1111,
+          "per_capita_income": 363081,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 70.6,
+          "ev_adoption_likelihood": "High",
+          "latitude": 10.0153,
+          "longitude": 76.3478
+        },
+        {
+          "name": "Kalamassery",
+          "population": 255828,
+          "density_per_km2": 1111,
+          "per_capita_income": 363081,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 70.6,
+          "ev_adoption_likelihood": "High",
+          "latitude": 10.0535,
+          "longitude": 76.3272
+        },
+        {
+          "name": "Aluva",
+          "population": 170552,
+          "density_per_km2": 1111,
+          "per_capita_income": 363081,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 70.6,
+          "ev_adoption_likelihood": "High",
+          "latitude": 10.1081,
+          "longitude": 76.3528
+        },
+        {
+          "name": "Eloor",
+          "population": 170552,
+          "density_per_km2": 1111,
+          "per_capita_income": 363081,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 70.6,
+          "ev_adoption_likelihood": "High",
+          "latitude": 10.0722,
+          "longitude": 76.275
+        },
+        {
+          "name": "Perumbavoor",
+          "population": 170552,
+          "density_per_km2": 1111,
+          "per_capita_income": 363081,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 70.6,
+          "ev_adoption_likelihood": "High",
+          "latitude": 10.1093,
+          "longitude": 76.4742
+        }
+      ],
+      "panchayats": {
+        "count": 88,
+        "avg_density": 451,
+        "avg_income": 311212,
+        "avg_vehicles_per_1000": 220,
+        "ev_adoption_likelihood": "Medium",
+        "avg_population": 12597,
+        "household_car_ownership_percent": 20.6,
+        "ev_adoption_likelihood_score": 51.2
+      }
+    },
+    {
+      "district": "Thrissur",
+      "corporations": [
+        {
+          "name": "Thrissur",
+          "population": 1088614,
+          "density_per_km2": 2393,
+          "per_capita_income": 326617,
+          "vehicles_per_1000_people": 350,
+          "household_car_ownership_percent": 31.5,
+          "ev_adoption_likelihood_score": 77.8,
+          "ev_adoption_likelihood": "Very High",
+          "latitude": 10.5276,
+          "longitude": 76.2144
+        }
+      ],
+      "municipalities": [
+        {
+          "name": "Irinjalakuda",
+          "population": 242605,
+          "density_per_km2": 1066,
+          "per_capita_income": 298215,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 63.8,
+          "ev_adoption_likelihood": "High",
+          "latitude": 10.3416,
+          "longitude": 76.2126
+        },
+        {
+          "name": "Chalakudy",
+          "population": 242605,
+          "density_per_km2": 1066,
+          "per_capita_income": 298215,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 63.8,
+          "ev_adoption_likelihood": "High",
+          "latitude": 10.3064,
+          "longitude": 76.3319
+        },
+        {
+          "name": "Kodungallur",
+          "population": 161737,
+          "density_per_km2": 1066,
+          "per_capita_income": 298215,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 63.8,
+          "ev_adoption_likelihood": "High",
+          "latitude": 10.2263,
+          "longitude": 76.1994
+        },
+        {
+          "name": "Guruvayur",
+          "population": 161737,
+          "density_per_km2": 1066,
+          "per_capita_income": 298215,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 63.8,
+          "ev_adoption_likelihood": "High",
+          "latitude": 10.594,
+          "longitude": 76.0419
+        },
+        {
+          "name": "Kunnamkulam",
+          "population": 161737,
+          "density_per_km2": 1066,
+          "per_capita_income": 298215,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 63.8,
+          "ev_adoption_likelihood": "High",
+          "latitude": 10.6494,
+          "longitude": 76.0736
+        }
+      ],
+      "panchayats": {
+        "count": 92,
+        "avg_density": 433,
+        "avg_income": 255613,
+        "avg_vehicles_per_1000": 220,
+        "ev_adoption_likelihood": "Low",
+        "avg_population": 11427,
+        "household_car_ownership_percent": 20.6,
+        "ev_adoption_likelihood_score": 44.5
+      }
+    },
+    {
+      "district": "Kozhikode",
+      "corporations": [
+        {
+          "name": "Kozhikode",
+          "population": 1081340,
+          "density_per_km2": 3075,
+          "per_capita_income": 270250,
+          "vehicles_per_1000_people": 350,
+          "household_car_ownership_percent": 31.5,
+          "ev_adoption_likelihood_score": 71.4,
+          "ev_adoption_likelihood": "High",
+          "latitude": 11.2588,
+          "longitude": 75.7804
+        }
+      ],
+      "municipalities": [
+        {
+          "name": "Vadakara",
+          "population": 240984,
+          "density_per_km2": 1370,
+          "per_capita_income": 246750,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 64.0,
+          "ev_adoption_likelihood": "High",
+          "latitude": 11.6061,
+          "longitude": 75.5947
+        },
+        {
+          "name": "Koyilandy",
+          "population": 240984,
+          "density_per_km2": 1370,
+          "per_capita_income": 246750,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 64.0,
+          "ev_adoption_likelihood": "High",
+          "latitude": 11.4383,
+          "longitude": 75.6965
+        },
+        {
+          "name": "Feroke",
+          "population": 160656,
+          "density_per_km2": 1370,
+          "per_capita_income": 246750,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 64.0,
+          "ev_adoption_likelihood": "High",
+          "latitude": 11.1731,
+          "longitude": 75.825
+        },
+        {
+          "name": "Ramanattukara",
+          "population": 160656,
+          "density_per_km2": 1370,
+          "per_capita_income": 246750,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 64.0,
+          "ev_adoption_likelihood": "High",
+          "latitude": 11.2553,
+          "longitude": 75.8028
+        },
+        {
+          "name": "Quilandy",
+          "population": 160656,
+          "density_per_km2": 1370,
+          "per_capita_income": 246750,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 64.0,
+          "ev_adoption_likelihood": "High",
+          "latitude": 11.4383,
+          "longitude": 75.6965
+        }
+      ],
+      "panchayats": {
+        "count": 78,
+        "avg_density": 556,
+        "avg_income": 211500,
+        "avg_vehicles_per_1000": 220,
+        "ev_adoption_likelihood": "Low",
+        "avg_population": 13388,
+        "household_car_ownership_percent": 20.6,
+        "ev_adoption_likelihood_score": 41.9
+      }
+    },
+    {
+      "district": "Kollam",
+      "corporations": [
+        {
+          "name": "Kollam",
+          "population": 920396,
+          "density_per_km2": 2463,
+          "per_capita_income": 365343,
+          "vehicles_per_1000_people": 350,
+          "household_car_ownership_percent": 31.5,
+          "ev_adoption_likelihood_score": 80.5,
+          "ev_adoption_likelihood": "Very High",
+          "latitude": 8.8932,
+          "longitude": 76.6141
+        }
+      ],
+      "municipalities": [
+        {
+          "name": "Karunagappally",
+          "population": 205116,
+          "density_per_km2": 1097,
+          "per_capita_income": 333574,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 68.5,
+          "ev_adoption_likelihood": "High",
+          "latitude": 9.0534,
+          "longitude": 76.5287
+        },
+        {
+          "name": "Paravur",
+          "population": 205116,
+          "density_per_km2": 1097,
+          "per_capita_income": 333574,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 68.5,
+          "ev_adoption_likelihood": "High",
+          "latitude": 8.7929,
+          "longitude": 76.6733
+        },
+        {
+          "name": "Punalur",
+          "population": 136744,
+          "density_per_km2": 1097,
+          "per_capita_income": 333574,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 68.5,
+          "ev_adoption_likelihood": "High",
+          "latitude": 9.0196,
+          "longitude": 76.9248
+        },
+        {
+          "name": "Kottarakkara",
+          "population": 136744,
+          "density_per_km2": 1097,
+          "per_capita_income": 333574,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 68.5,
+          "ev_adoption_likelihood": "High",
+          "latitude": 8.9872,
+          "longitude": 76.7358
+        },
+        {
+          "name": "Chavara",
+          "population": 136744,
+          "density_per_km2": 1097,
+          "per_capita_income": 333574,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 68.5,
+          "ev_adoption_likelihood": "High",
+          "latitude": 8.9708,
+          "longitude": 76.5314
+        }
+      ],
+      "panchayats": {
+        "count": 71,
+        "avg_density": 445,
+        "avg_income": 285921,
+        "avg_vehicles_per_1000": 220,
+        "ev_adoption_likelihood": "Medium",
+        "avg_population": 12518,
+        "household_car_ownership_percent": 20.6,
+        "ev_adoption_likelihood_score": 48.2
+      }
+    },
+    {
+      "district": "Malappuram",
+      "corporations": [],
+      "municipalities": [
+        {
+          "name": "Malappuram",
+          "population": 411095,
+          "density_per_km2": 1544,
+          "per_capita_income": 203878,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 61.7,
+          "ev_adoption_likelihood": "High",
+          "latitude": 11.051,
+          "longitude": 76.0711
+        },
+        {
+          "name": "Manjeri",
+          "population": 411095,
+          "density_per_km2": 1544,
+          "per_capita_income": 203878,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 61.7,
+          "ev_adoption_likelihood": "High",
+          "latitude": 11.1208,
+          "longitude": 76.1205
+        },
+        {
+          "name": "Tirur",
+          "population": 274063,
+          "density_per_km2": 1544,
+          "per_capita_income": 203878,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 61.7,
+          "ev_adoption_likelihood": "High",
+          "latitude": 10.9144,
+          "longitude": 75.9233
+        },
+        {
+          "name": "Ponnani",
+          "population": 274063,
+          "density_per_km2": 1544,
+          "per_capita_income": 203878,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 61.7,
+          "ev_adoption_likelihood": "High",
+          "latitude": 10.7682,
+          "longitude": 75.9253
+        },
+        {
+          "name": "Perinthalmanna",
+          "population": 274063,
+          "density_per_km2": 1544,
+          "per_capita_income": 203878,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 61.7,
+          "ev_adoption_likelihood": "High",
+          "latitude": 10.9756,
+          "longitude": 76.2281
+        },
+        {
+          "name": "Tanur",
+          "population": 274063,
+          "density_per_km2": 1544,
+          "per_capita_income": 203878,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 61.7,
+          "ev_adoption_likelihood": "High",
+          "latitude": 10.9947,
+          "longitude": 75.8708
+        }
+      ],
+      "panchayats": {
+        "count": 98,
+        "avg_density": 771,
+        "avg_income": 174753,
+        "avg_vehicles_per_1000": 220,
+        "ev_adoption_likelihood": "Low",
+        "avg_population": 22372,
+        "household_car_ownership_percent": 20.6,
+        "ev_adoption_likelihood_score": 42.0
+      }
+    },
+    {
+      "district": "Alappuzha",
+      "corporations": [],
+      "municipalities": [
+        {
+          "name": "Alappuzha",
+          "population": 254633,
+          "density_per_km2": 2401,
+          "per_capita_income": 350368,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 78.4,
+          "ev_adoption_likelihood": "Very High",
+          "latitude": 9.4981,
+          "longitude": 76.3388
+        },
+        {
+          "name": "Cherthala",
+          "population": 254633,
+          "density_per_km2": 2401,
+          "per_capita_income": 350368,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 78.4,
+          "ev_adoption_likelihood": "Very High",
+          "latitude": 9.6847,
+          "longitude": 76.3358
+        },
+        {
+          "name": "Kayamkulam",
+          "population": 169755,
+          "density_per_km2": 2401,
+          "per_capita_income": 350368,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 78.4,
+          "ev_adoption_likelihood": "Very High",
+          "latitude": 9.1742,
+          "longitude": 76.501
+        },
+        {
+          "name": "Mavelikkara",
+          "population": 169755,
+          "density_per_km2": 2401,
+          "per_capita_income": 350368,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 78.4,
+          "ev_adoption_likelihood": "Very High",
+          "latitude": 9.2564,
+          "longitude": 76.5508
+        },
+        {
+          "name": "Haripad",
+          "population": 169755,
+          "density_per_km2": 2401,
+          "per_capita_income": 350368,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 78.4,
+          "ev_adoption_likelihood": "Very High",
+          "latitude": 9.2942,
+          "longitude": 76.4556
+        }
+      ],
+      "panchayats": {
+        "count": 73,
+        "avg_density": 975,
+        "avg_income": 300315,
+        "avg_vehicles_per_1000": 220,
+        "ev_adoption_likelihood": "High",
+        "avg_population": 15115,
+        "household_car_ownership_percent": 20.6,
+        "ev_adoption_likelihood_score": 60.4
+      }
+    },
+    {
+      "district": "Palakkad",
+      "corporations": [],
+      "municipalities": [
+        {
+          "name": "Palakkad",
+          "population": 337306,
+          "density_per_km2": 1003,
+          "per_capita_income": 240121,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 55.9,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 10.7867,
+          "longitude": 76.6548
+        },
+        {
+          "name": "Ottappalam",
+          "population": 337306,
+          "density_per_km2": 1003,
+          "per_capita_income": 240121,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 55.9,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 10.7744,
+          "longitude": 76.3778
+        },
+        {
+          "name": "Chittur",
+          "population": 224871,
+          "density_per_km2": 1003,
+          "per_capita_income": 240121,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 55.9,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 10.6974,
+          "longitude": 76.7467
+        },
+        {
+          "name": "Shoranur",
+          "population": 224871,
+          "density_per_km2": 1003,
+          "per_capita_income": 240121,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 55.9,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 10.7653,
+          "longitude": 76.2768
+        },
+        {
+          "name": "Mannarkkad",
+          "population": 224871,
+          "density_per_km2": 1003,
+          "per_capita_income": 240121,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 55.9,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 10.9914,
+          "longitude": 76.4548
+        }
+      ],
+      "panchayats": {
+        "count": 90,
+        "avg_density": 407,
+        "avg_income": 205818,
+        "avg_vehicles_per_1000": 220,
+        "ev_adoption_likelihood": "Low",
+        "avg_population": 16240,
+        "household_car_ownership_percent": 20.6,
+        "ev_adoption_likelihood_score": 38.3
+      }
+    },
+    {
+      "district": "Kannur",
+      "corporations": [
+        {
+          "name": "Kannur",
+          "population": 883051,
+          "density_per_km2": 1984,
+          "per_capita_income": 276000,
+          "vehicles_per_1000_people": 350,
+          "household_car_ownership_percent": 31.5,
+          "ev_adoption_likelihood_score": 72.0,
+          "ev_adoption_likelihood": "High",
+          "latitude": 11.8745,
+          "longitude": 75.3704
+        }
+      ],
+      "municipalities": [
+        {
+          "name": "Thalassery",
+          "population": 196794,
+          "density_per_km2": 884,
+          "per_capita_income": 252000,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 54.9,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 11.748,
+          "longitude": 75.49
+        },
+        {
+          "name": "Mattannur",
+          "population": 196794,
+          "density_per_km2": 884,
+          "per_capita_income": 252000,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 54.9,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 11.929,
+          "longitude": 75.5744
+        },
+        {
+          "name": "Payyannur",
+          "population": 131196,
+          "density_per_km2": 884,
+          "per_capita_income": 252000,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 54.9,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 12.0978,
+          "longitude": 75.2017
+        },
+        {
+          "name": "Taliparamba",
+          "population": 131196,
+          "density_per_km2": 884,
+          "per_capita_income": 252000,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 54.9,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 12.0411,
+          "longitude": 75.3597
+        },
+        {
+          "name": "Iritty",
+          "population": 131196,
+          "density_per_km2": 884,
+          "per_capita_income": 252000,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 54.9,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 11.9278,
+          "longitude": 75.6113
+        }
+      ],
+      "panchayats": {
+        "count": 81,
+        "avg_density": 359,
+        "avg_income": 216000,
+        "avg_vehicles_per_1000": 220,
+        "ev_adoption_likelihood": "Low",
+        "avg_population": 10528,
+        "household_car_ownership_percent": 20.6,
+        "ev_adoption_likelihood_score": 38.5
+      }
+    },
+    {
+      "district": "Kottayam",
+      "corporations": [],
+      "municipalities": [
+        {
+          "name": "Kottayam",
+          "population": 236946,
+          "density_per_km2": 1430,
+          "per_capita_income": 303118,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 71.6,
+          "ev_adoption_likelihood": "High",
+          "latitude": 9.5916,
+          "longitude": 76.5222
+        },
+        {
+          "name": "Changanassery",
+          "population": 236946,
+          "density_per_km2": 1430,
+          "per_capita_income": 303118,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 71.6,
+          "ev_adoption_likelihood": "High",
+          "latitude": 9.445,
+          "longitude": 76.5428
+        },
+        {
+          "name": "Pala",
+          "population": 157964,
+          "density_per_km2": 1430,
+          "per_capita_income": 303118,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 71.6,
+          "ev_adoption_likelihood": "High",
+          "latitude": 9.7167,
+          "longitude": 76.6833
+        },
+        {
+          "name": "Ettumanoor",
+          "population": 157964,
+          "density_per_km2": 1430,
+          "per_capita_income": 303118,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 71.6,
+          "ev_adoption_likelihood": "High",
+          "latitude": 9.6818,
+          "longitude": 76.5483
+        },
+        {
+          "name": "Vaikom",
+          "population": 157964,
+          "density_per_km2": 1430,
+          "per_capita_income": 303118,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 71.6,
+          "ev_adoption_likelihood": "High",
+          "latitude": 9.7489,
+          "longitude": 76.3956
+        }
+      ],
+      "panchayats": {
+        "count": 75,
+        "avg_density": 581,
+        "avg_income": 259815,
+        "avg_vehicles_per_1000": 220,
+        "ev_adoption_likelihood": "Medium",
+        "avg_population": 13690,
+        "household_car_ownership_percent": 20.6,
+        "ev_adoption_likelihood_score": 47.9
+      }
+    },
+    {
+      "district": "Pathanamthitta",
+      "corporations": [],
+      "municipalities": [
+        {
+          "name": "Pathanamthitta",
+          "population": 143689,
+          "density_per_km2": 726,
+          "per_capita_income": 213251,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 47.3,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 9.2648,
+          "longitude": 76.787
+        },
+        {
+          "name": "Adoor",
+          "population": 143689,
+          "density_per_km2": 726,
+          "per_capita_income": 213251,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 47.3,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 9.1568,
+          "longitude": 76.7338
+        },
+        {
+          "name": "Thiruvalla",
+          "population": 95792,
+          "density_per_km2": 726,
+          "per_capita_income": 213251,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 47.3,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 9.3833,
+          "longitude": 76.5746
+        },
+        {
+          "name": "Pandalam",
+          "population": 95792,
+          "density_per_km2": 726,
+          "per_capita_income": 213251,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 47.3,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 9.2089,
+          "longitude": 76.675
+        },
+        {
+          "name": "Kozhencherry",
+          "population": 95792,
+          "density_per_km2": 726,
+          "per_capita_income": 213251,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 47.3,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 9.2889,
+          "longitude": 76.6744
+        }
+      ],
+      "panchayats": {
+        "count": 54,
+        "avg_density": 295,
+        "avg_income": 182787,
+        "avg_vehicles_per_1000": 220,
+        "ev_adoption_likelihood": "Low",
+        "avg_population": 11530,
+        "household_car_ownership_percent": 20.6,
+        "ev_adoption_likelihood_score": 33.4
+      }
+    },
+    {
+      "district": "Idukki",
+      "corporations": [],
+      "municipalities": [
+        {
+          "name": "Thodupuzha",
+          "population": 166117,
+          "density_per_km2": 508,
+          "per_capita_income": 284142,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 51.0,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 9.8948,
+          "longitude": 76.7184
+        },
+        {
+          "name": "Kattappana",
+          "population": 166117,
+          "density_per_km2": 508,
+          "per_capita_income": 284142,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 51.0,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 9.6944,
+          "longitude": 77.0683
+        },
+        {
+          "name": "Munnar",
+          "population": 110745,
+          "density_per_km2": 508,
+          "per_capita_income": 284142,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 51.0,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 10.0889,
+          "longitude": 77.0595
+        },
+        {
+          "name": "Adimali",
+          "population": 110745,
+          "density_per_km2": 508,
+          "per_capita_income": 284142,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 51.0,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 9.9853,
+          "longitude": 76.9656
+        }
+      ],
+      "panchayats": {
+        "count": 52,
+        "avg_density": 158,
+        "avg_income": 243550,
+        "avg_vehicles_per_1000": 220,
+        "ev_adoption_likelihood": "Low",
+        "avg_population": 10648,
+        "household_car_ownership_percent": 20.6,
+        "ev_adoption_likelihood_score": 37.6
+      }
+    },
+    {
+      "district": "Wayanad",
+      "corporations": [],
+      "municipalities": [
+        {
+          "name": "Kalpetta",
+          "population": 163311,
+          "density_per_km2": 1021,
+          "per_capita_income": 225750,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 54.6,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 11.6103,
+          "longitude": 76.0829
+        },
+        {
+          "name": "Mananthavady",
+          "population": 163311,
+          "density_per_km2": 1021,
+          "per_capita_income": 225750,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 54.6,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 11.8042,
+          "longitude": 76.0008
+        },
+        {
+          "name": "Sulthan Bathery",
+          "population": 108874,
+          "density_per_km2": 1021,
+          "per_capita_income": 225750,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 54.6,
+          "ev_adoption_likelihood": "Medium",
+          "latitude": 11.6831,
+          "longitude": 76.2744
+        }
+      ],
+      "panchayats": {
+        "count": 23,
+        "avg_density": 223,
+        "avg_income": 193500,
+        "avg_vehicles_per_1000": 220,
+        "ev_adoption_likelihood": "Low",
+        "avg_population": 16567,
+        "household_car_ownership_percent": 20.6,
+        "ev_adoption_likelihood_score": 33.2
+      }
+    },
+    {
+      "district": "Kasaragod",
+      "corporations": [],
+      "municipalities": [
+        {
+          "name": "Kasaragod",
+          "population": 196106,
+          "density_per_km2": 1312,
+          "per_capita_income": 231000,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 61.0,
+          "ev_adoption_likelihood": "High",
+          "latitude": 12.4996,
+          "longitude": 74.9869
+        },
+        {
+          "name": "Kanhangad",
+          "population": 196106,
+          "density_per_km2": 1312,
+          "per_capita_income": 231000,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 61.0,
+          "ev_adoption_likelihood": "High",
+          "latitude": 12.3081,
+          "longitude": 75.0958
+        },
+        {
+          "name": "Nileshwar",
+          "population": 130737,
+          "density_per_km2": 1312,
+          "per_capita_income": 231000,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 61.0,
+          "ev_adoption_likelihood": "High",
+          "latitude": 12.2599,
+          "longitude": 75.1354
+        },
+        {
+          "name": "Payyanur",
+          "population": 130737,
+          "density_per_km2": 1312,
+          "per_capita_income": 231000,
+          "vehicles_per_1000_people": 280,
+          "household_car_ownership_percent": 26.6,
+          "ev_adoption_likelihood_score": 61.0,
+          "ev_adoption_likelihood": "High",
+          "latitude": 12.0978,
+          "longitude": 75.2017
+        }
+      ],
+      "panchayats": {
+        "count": 39,
+        "avg_density": 410,
+        "avg_income": 198000,
+        "avg_vehicles_per_1000": 220,
+        "ev_adoption_likelihood": "Low",
+        "avg_population": 16761,
+        "household_car_ownership_percent": 20.6,
+        "ev_adoption_likelihood_score": 37.4
+      }
+    }
+  ]
+}
