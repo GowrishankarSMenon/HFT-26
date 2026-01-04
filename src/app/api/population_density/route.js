@@ -8,7 +8,7 @@ let db = null;
 async function getDb() {
     if (db) return db;
     const dbPath = path.join(process.cwd(), "cleaning", 'source.db');
-    console.log(dbPath);
+    console.log('Population Density DB Path:', dbPath);
 
     const fs = require('fs');
     if (!fs.existsSync(dbPath)) {
@@ -22,15 +22,12 @@ async function getDb() {
         fileMustExist: true
     });
 
-    const tables = await db.all("SELECT * FROM sqlite_master");
-    console.log('Available tables:', tables);
-
     return db;
 }
 
 export async function POST(request) {
     try {
-        const { bounds, type } = await request.json();
+        const { bounds } = await request.json();
 
         if (!bounds || bounds.length < 3) {
             return NextResponse.json({ error: 'Invalid bounds' }, { status: 400 });
@@ -46,22 +43,26 @@ export async function POST(request) {
         const database = await getDb();
 
         const query = `
-          SELECT Latitude, Longitude, "Status Code", "Access Code"
-          FROM ev_stations
-          WHERE Latitude BETWEEN ? AND ?
-            AND Longitude BETWEEN ? AND ?
-            AND "Status Code" = 'E'
-            AND "Access Code" = 'public';
+          SELECT 
+            latitude, 
+            longitude, 
+            population, 
+            density_per_m2, 
+            per_capita_income, 
+            area
+          FROM population_density
+          WHERE latitude BETWEEN ? AND ?
+            AND longitude BETWEEN ? AND ?
+            AND density_per_m2 > 0;
         `;
-        //const query = "SELECT * FROM ev_stations;";
 
-        const stations = await database.all(query, [minLat, maxLat, minLng, maxLng]);
+        const densityData = await database.all(query, [minLat, maxLat, minLng, maxLng]);
 
-        console.log(`Found ${stations.length} stations in bounds`);
+        console.log(`Found ${densityData.length} population density zones in bounds`);
 
-        return NextResponse.json({ stations });
+        return NextResponse.json({ densityData });
     } catch (error) {
-        console.error('Database error:', error);
+        console.error('Population density database error:', error);
         return NextResponse.json({
             error: 'Database query failed',
             details: error.message

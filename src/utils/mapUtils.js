@@ -109,7 +109,7 @@ const cellIntersectsPolygon = (cellCorners, polygon) => {
 };
 
 /* ----------------------------------------------------
-   GRID GENERATION (50 m² base, +1400 buffer cells)
+   GRID GENERATION (Adaptive cell size for large areas)
 ---------------------------------------------------- */
 export const generateGridCells = (polygonCoords) => {
   if (!polygonCoords || polygonCoords.length < 3) return [];
@@ -122,7 +122,28 @@ export const generateGridCells = (polygonCoords) => {
   const minLng = Math.min(...lngs);
   const maxLng = Math.max(...lngs);
 
-  const BASE_CELL_AREA = 50;
+  // Calculate area to determine appropriate cell size
+  const area = calculateArea(polygonCoords);
+
+  // Adaptive cell size based on area
+  let BASE_CELL_AREA;
+  let MAX_CELLS;
+
+  if (area > 100) { // Very large area (> 100 km²)
+    BASE_CELL_AREA = 500; // 500 m² cells
+    MAX_CELLS = 5000;
+    console.warn(`Large area detected (${area.toFixed(2)} km²). Using larger cell size to prevent overflow.`);
+  } else if (area > 50) { // Large area (50-100 km²)
+    BASE_CELL_AREA = 200; // 200 m² cells
+    MAX_CELLS = 8000;
+  } else if (area > 10) { // Medium area (10-50 km²)
+    BASE_CELL_AREA = 100; // 100 m² cells
+    MAX_CELLS = 10000;
+  } else { // Small area (< 10 km²)
+    BASE_CELL_AREA = 50; // 50 m² cells (original)
+    MAX_CELLS = 15000;
+  }
+
   const CELL_SIDE = Math.sqrt(BASE_CELL_AREA) * 2;
 
   const METERS_PER_DEGREE_LAT = 111320;
@@ -134,8 +155,17 @@ export const generateGridCells = (polygonCoords) => {
 
   const originalLatCells = Math.ceil((maxLat - minLat) / latStep);
   const originalLngCells = Math.ceil((maxLng - minLng) / lngStep);
+  const estimatedCells = originalLatCells * originalLngCells;
 
-  const TOTAL_BUFFER_CELLS = 1400;
+  // Safety check: if estimated cells exceed limit, increase cell size
+  if (estimatedCells > MAX_CELLS) {
+    const scaleFactor = Math.sqrt(estimatedCells / MAX_CELLS);
+    BASE_CELL_AREA *= scaleFactor;
+    console.warn(`Adjusting cell size to prevent overflow. New cell area: ${BASE_CELL_AREA.toFixed(0)} m²`);
+  }
+
+  // Reduce buffer for large areas
+  const TOTAL_BUFFER_CELLS = area > 50 ? 500 : (area > 10 ? 1000 : 1400);
   const bufferLayers = Math.max(1, Math.round(Math.sqrt(TOTAL_BUFFER_CELLS / 4)));
 
   const expandedMinLat = minLat - (bufferLayers * latStep);
@@ -185,10 +215,25 @@ export const generateGridCells = (polygonCoords) => {
   const bufferCells = cells.filter(c => c.isBuffer).length;
   const polygonCells = cells.filter(c => c.inPolygon).length;
 
+  console.log(`Area: ${area.toFixed(2)} km²`);
+  console.log(`Cell size: ${BASE_CELL_AREA.toFixed(0)} m² (${CELL_SIDE.toFixed(1)}m x ${CELL_SIDE.toFixed(1)}m)`);
   console.log(`Buffer layers added: ${bufferLayers}`);
   console.log(`Original grid: ${originalLatCells} x ${originalLngCells} = ${originalLatCells * originalLngCells} cells`);
   console.log(`Expanded grid: ${Math.ceil((expandedMaxLat - expandedMinLat) / latStep)} x ${Math.ceil((expandedMaxLng - expandedMinLng) / lngStep)}`);
   console.log(`Total cells: ${cells.length} (${polygonCells} in polygon, ${bufferCells} buffer)`);
+
+  // Display initial cost matrix (all zeros) - limit to prevent console overflow
+  const displayLimit = Math.min(20, polygonCells);
+  console.log('\n=== INITIAL COST MATRIX (After Initialization) ===');
+  console.log(`All cells initialized with cost = 0`);
+  console.table(cells.filter(c => c.inPolygon).slice(0, displayLimit).map((cell, idx) => ({
+    id: idx,
+    centerLat: cell.centerLat.toFixed(6),
+    centerLng: cell.centerLng.toFixed(6),
+    cost: cell.cost,
+    inPolygon: cell.inPolygon ? 'Yes' : 'No'
+  })));
+  console.log(`(Showing first ${displayLimit} cells in polygon, total: ${polygonCells})\n`);
 
   return cells;
 };
@@ -242,31 +287,147 @@ export const generateStats = (bounds) => {
 };
 
 /* ----------------------------------------------------
+   HAVERSINE DISTANCE CALCULATION (in km)
+---------------------------------------------------- */
+const calculateDistance = (lat1, lng1, lat2, lng2) => {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
+/* ----------------------------------------------------
+   COST CALCULATION - CHARGING STATION PROXIMITY PENALTY
+   Radial decay: Higher penalty near stations, decreasing with distance
+---------------------------------------------------- */
+export const calculateChargingStationProximityCost = (cells, chargingStations) => {
+  if (!chargingStations || chargingStations.length === 0) {
+    console.log('No charging stations provided for cost calculation');
+    return cells;
+  }
+
+  // Maximum penalty distance in km (beyond this, no penalty is applied)
+  const MAX_PENALTY_DISTANCE = 2.0; // 2 km radius
+  const MAX_PENALTY_COST = 100; // Maximum penalty cost at station location
+
+  console.log('\n=== APPLYING CHARGING STATION PROXIMITY PENALTIES ===');
+  console.log(`Processing ${cells.length} cells based on ${chargingStations.length} charging stations`);
+  console.log(`Penalty parameters: Max distance = ${MAX_PENALTY_DISTANCE} km, Max penalty = ${MAX_PENALTY_COST}`);
+  console.log(`Penalty model: Radial decay (highest at center, decreases with distance)\n`);
+
+  cells.forEach((cell, idx) => {
+    let minDistance = Infinity;
+
+    // Find minimum distance to any charging station
+    chargingStations.forEach(station => {
+      const distance = calculateDistance(
+        cell.centerLat,
+        cell.centerLng,
+        station[0],
+        station[1]
+      );
+      minDistance = Math.min(minDistance, distance);
+    });
+
+    // Calculate penalty using radial decay model
+    // Penalty decreases as distance from charging station increases
+    if (minDistance <= MAX_PENALTY_DISTANCE) {
+      // Quadratic decay: penalty² decreases with distance
+      // This creates a steeper drop-off near the station
+      const distanceRatio = minDistance / MAX_PENALTY_DISTANCE; // 0 (at station) to 1 (at max distance)
+      const penaltyRatio = 1 - Math.pow(distanceRatio, 2); // Quadratic decay
+      cell.cost += Math.round(penaltyRatio * MAX_PENALTY_COST);
+    }
+
+    cell.nearestStationDistance = minDistance;
+  });
+
+  // Log statistics
+  const cellsInPolygon = cells.filter(c => c.inPolygon);
+  const avgCost = cellsInPolygon.reduce((sum, c) => sum + c.cost, 0) / cellsInPolygon.length;
+  const maxCost = Math.max(...cellsInPolygon.map(c => c.cost));
+  const minCost = Math.min(...cellsInPolygon.map(c => c.cost));
+  const cellsWithPenalty = cellsInPolygon.filter(c => c.cost > 0).length;
+
+  console.log('=== PENALTY CALCULATION RESULTS ===');
+  console.log(`Cells in polygon: ${cellsInPolygon.length}`);
+  console.log(`Cells with penalty (within ${MAX_PENALTY_DISTANCE} km): ${cellsWithPenalty}`);
+  console.log(`Cells without penalty (beyond ${MAX_PENALTY_DISTANCE} km): ${cellsInPolygon.length - cellsWithPenalty}`);
+  console.log(`Cost statistics:`);
+  console.log(`  - Min cost: ${minCost}`);
+  console.log(`  - Max cost: ${maxCost}`);
+  console.log(`  - Average cost: ${avgCost.toFixed(2)}`);
+  console.log('');
+
+  // Display sample of cells with various penalty levels
+  const sortedCells = cellsInPolygon.slice().sort((a, b) => b.cost - a.cost);
+  const sampleSize = Math.min(30, cellsInPolygon.length);
+
+  console.log(`=== COST MATRIX AFTER PROXIMITY PENALTY (Top ${sampleSize} by cost) ===`);
+  console.table(sortedCells.slice(0, sampleSize).map((cell, idx) => ({
+    rank: idx + 1,
+    centerLat: cell.centerLat.toFixed(6),
+    centerLng: cell.centerLng.toFixed(6),
+    cost: cell.cost,
+    nearestStation_km: cell.nearestStationDistance.toFixed(3),
+    favorability: maxCost > 0 ? `${(100 * (1 - cell.cost / maxCost)).toFixed(1)}%` : '100%'
+  })));
+
+  // Display full cost distribution
+  const costDistribution = {};
+  cellsInPolygon.forEach(cell => {
+    const costBucket = Math.floor(cell.cost / 10) * 10;
+    costDistribution[costBucket] = (costDistribution[costBucket] || 0) + 1;
+  });
+
+  console.log('\n=== COST DISTRIBUTION ===');
+  const distTable = Object.entries(costDistribution)
+    .sort((a, b) => parseInt(b[0]) - parseInt(a[0])) // Sort by cost descending
+    .map(([cost, count]) => ({
+      costRange: `${cost}-${parseInt(cost) + 9}`,
+      cellCount: count,
+      percentage: `${(100 * count / cellsInPolygon.length).toFixed(1)}%`
+    }));
+
+  console.table(distTable);
+
+  console.log('\n'); return cells;
+};
+
+/* ----------------------------------------------------
    GRID VISUALIZATION (RECTANGLES)
 ---------------------------------------------------- */
 export const visualizeGridCells = (map, cells) => {
   const visibleCells = cells.filter(c => c.inPolygon);
 
-  console.log('=== GRID CELLS MATRIX ===');
+  console.log('=== GRID CELLS COST MATRIX ===');
   console.log(`Total cells: ${cells.length}`);
   console.log(`Cells in polygon: ${cells.filter(c => c.inPolygon).length}`);
   console.log(`Buffer cells: ${cells.filter(c => c.isBuffer).length}`);
   console.log('');
 
-  console.table(cells.map((cell, idx) => ({
+  // Limit console.table to prevent overflow
+  const tableLimit = Math.min(50, cells.length);
+  console.table(cells.slice(0, tableLimit).map((cell, idx) => ({
     id: idx,
     centerLat: cell.centerLat.toFixed(6),
     centerLng: cell.centerLng.toFixed(6),
-    minLat: cell.minLat.toFixed(6),
-    minLng: cell.minLng.toFixed(6),
-    maxLat: cell.maxLat.toFixed(6),
-    maxLng: cell.maxLng.toFixed(6),
     cost: cell.cost,
+    nearestStation: cell.nearestStationDistance ? `${cell.nearestStationDistance.toFixed(3)} km` : 'N/A',
     inPolygon: cell.inPolygon ? 'Yes' : 'No',
     isBuffer: cell.isBuffer ? 'Yes' : 'No'
   })));
 
-  console.log('Raw cells array:', cells);
+  if (cells.length > tableLimit) {
+    console.log(`(Showing first ${tableLimit} of ${cells.length} cells to prevent console overflow)`);
+  }
   console.log('');
 
   const gridLayer = L.layerGroup();
@@ -293,7 +454,10 @@ export const visualizeGridCells = (map, cells) => {
     );
 
     rect.bindPopup(
-      `<strong>Grid Cell ${idx + 1}</strong><br/>Cost: ${cell.cost}<br/>In Polygon: Yes`
+      `<strong>Grid Cell ${idx + 1}</strong><br/>` +
+      `Cost: ${cell.cost}<br/>` +
+      `Nearest Station: ${cell.nearestStationDistance ? cell.nearestStationDistance.toFixed(3) + ' km' : 'N/A'}<br/>` +
+      `In Polygon: Yes`
     );
 
     gridLayer.addLayer(rect);
