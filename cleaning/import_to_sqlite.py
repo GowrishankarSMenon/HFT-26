@@ -2,28 +2,27 @@ import sqlite3
 import pandas as pd
 
 # File paths
-csv_file = "ev_station_detail.csv"
-db_file = "ev_stations.db"
+csv_file = "kerala_substations_with_latlong.csv"
+db_file = "substations.db"
 
 # Read CSV
 df = pd.read_csv(csv_file)
 
-# Extract only lat and long columns and rename them
+# Extract latitude, longitude, and voltage_kv columns (omit place_name)
 df_to_insert = pd.DataFrame({
-    'Latitude': df['lat'],
-    'Longitude': df['long'],
-    'Status Code': 'E',
-    'Access Code': 'public'
+    'Latitude': df['latitude'],
+    'Longitude': df['longitude'],
+    'Voltage_kV': df['voltage_kv']
 })
 
 # Connect to SQLite database
 conn = sqlite3.connect(db_file)
 
-# Insert new rows into existing table (append mode)
+# Insert rows into new table
 df_to_insert.to_sql(
-    name="ev_stations",
+    name="kerala_substations",
     con=conn,
-    if_exists="append",
+    if_exists="replace",
     index=False
 )
 
