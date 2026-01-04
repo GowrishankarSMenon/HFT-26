@@ -239,19 +239,51 @@ export const generateGridCells = (polygonCoords) => {
 };
 
 /* ----------------------------------------------------
-   FETCH REAL STATIONS FROM DATABASE
+   EXPAND BOUNDS TO INCLUDE SURROUNDING AREA
+   Polygon is for visualization, but costs are affected by surroundings
 ---------------------------------------------------- */
-export const fetchStationsFromDB = async (bounds, type = 'charging') => {
+export const expandBounds = (bounds, bufferKm = 5) => {
+  // Calculate buffer in degrees (approximate)
+  // 1 degree latitude ≈ 111 km
+  // 1 degree longitude varies with latitude, but we'll use a conservative estimate
+  const bufferDegrees = bufferKm / 111;
+
+  const lats = bounds.map(coord => coord[0]);
+  const lngs = bounds.map(coord => coord[1]);
+
+  const minLat = Math.min(...lats) - bufferDegrees;
+  const maxLat = Math.max(...lats) + bufferDegrees;
+  const minLng = Math.min(...lngs) - bufferDegrees;
+  const maxLng = Math.max(...lngs) + bufferDegrees;
+
+  // Return expanded rectangular bounds
+  return [
+    [minLat, minLng],
+    [minLat, maxLng],
+    [maxLat, maxLng],
+    [maxLat, minLng]
+  ];
+};
+
+/* ----------------------------------------------------
+   FETCH REAL STATIONS FROM DATABASE
+   Fetches from expanded area (polygon + buffer) to account for surroundings
+---------------------------------------------------- */
+export const fetchStationsFromDB = async (bounds, type = 'charging', includeBuffer = true) => {
   try {
+    // Expand bounds to include surrounding area for cost calculations
+    const searchBounds = includeBuffer ? expandBounds(bounds, 5) : bounds;
+
     const response = await fetch('/api/stations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bounds, type })
+      body: JSON.stringify({ bounds: searchBounds, type })
     });
 
     if (!response.ok) throw new Error('Failed to fetch stations');
 
     const { stations } = await response.json();
+    console.log(`Fetched ${stations.length} ${type} stations from ${includeBuffer ? 'expanded' : 'polygon'} area`);
     return stations.map(s => [s.latitude, s.longitude]);
   } catch (error) {
     console.error('Error fetching stations:', error);

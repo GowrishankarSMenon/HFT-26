@@ -51,7 +51,8 @@ const KeralMapAnalyzer = () => {
   const plotMarkersFromDB = async (type) => {
     if (!map || !currentPath || currentPath.length < 3) return;
 
-    const stations = await fetchStationsFromDB(currentPath, type);
+    // For visualization, only fetch stations within polygon (no buffer)
+    const stations = await fetchStationsFromDB(currentPath, type, false);
 
     if (stations.length === 0) {
       console.warn(`No ${type} stations found in the database for this area`);
@@ -150,20 +151,18 @@ const KeralMapAnalyzer = () => {
     let cells = generateGridCells(currentPath);
     console.log('Total grid cells generated:', cells.length);
 
-    // Fetch charging stations and calculate proximity costs
-    const chargingStations = await fetchStationsFromDB(currentPath, 'charging');
-    const filteredStations = chargingStations.filter(station =>
-      pointInPolygon(station, currentPath)
-    );
+    // Fetch charging stations from expanded area (polygon + surroundings)
+    // Polygon is just for visualization, but cost is affected by nearby stations too
+    const chargingStations = await fetchStationsFromDB(currentPath, 'charging', true);
 
-    console.log(`Applying proximity penalties based on ${filteredStations.length} charging stations`);
-    cells = calculateChargingStationProximityCost(cells, filteredStations);
+    console.log(`Applying proximity penalties based on ${chargingStations.length} charging stations (including surroundings)`);
+    cells = calculateChargingStationProximityCost(cells, chargingStations);
 
-    // Fetch population density data and calculate density cost if layer is enabled
+    // Fetch population density data from expanded area and calculate density cost if layer is enabled
     if (showDensityLayer) {
-      const densityData = await fetchPopulationDensityData(currentPath);
-      console.log(`Applying population density cost based on ${densityData.length} density zones`);
-      cells = calculatePopulationDensityCost(cells, densityData);
+      const densityData = await fetchPopulationDensityData(currentPath, true);
+      console.log(`Applying population density cost based on ${densityData.length} density zones (including surroundings)`);
+      cells = calculatePopulationDensityCost(cells, densityData, chargingStations);
     }
 
     // Store cells for heat map toggle
@@ -178,6 +177,14 @@ const KeralMapAnalyzer = () => {
     // Only show grid if already toggled on
     if (showGrid) {
       gridLayerRef.current = visualizeGridCells(map, cells);
+    }
+
+    // Update heat map if it's currently showing (apply at the end after all layers)
+    if (showHeatMap) {
+      if (heatMapLayerRef.current) {
+        heatMapLayerRef.current.remove();
+      }
+      heatMapLayerRef.current = generateHeatMapLayer(map, cells);
     }
   };
 
@@ -262,18 +269,15 @@ const KeralMapAnalyzer = () => {
     // Recalculate costs with or without density layer
     let cells = generateGridCells(currentPath);
 
-    // Always apply charging station proximity
-    const chargingStations = await fetchStationsFromDB(currentPath, 'charging');
-    const filteredStations = chargingStations.filter(station =>
-      pointInPolygon(station, currentPath)
-    );
-    cells = calculateChargingStationProximityCost(cells, filteredStations);
+    // Always apply charging station proximity (fetch from expanded area including surroundings)
+    const chargingStations = await fetchStationsFromDB(currentPath, 'charging', true);
+    cells = calculateChargingStationProximityCost(cells, chargingStations);
 
-    // Apply density cost if toggled on
+    // Apply density cost if toggled on (fetch from expanded area including surroundings)
     if (next) {
-      const densityData = await fetchPopulationDensityData(currentPath);
-      console.log(`Toggling ON population density layer with ${densityData.length} zones`);
-      cells = calculatePopulationDensityCost(cells, densityData);
+      const densityData = await fetchPopulationDensityData(currentPath, true);
+      console.log(`Toggling ON population density layer with ${densityData.length} zones (including surroundings)`);
+      cells = calculatePopulationDensityCost(cells, densityData, chargingStations);
     } else {
       console.log('Toggling OFF population density layer');
     }

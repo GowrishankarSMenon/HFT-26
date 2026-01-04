@@ -19,19 +19,50 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
 };
 
 /* ----------------------------------------------------
-   FETCH POPULATION DENSITY DATA FROM DATABASE
+   EXPAND BOUNDS TO INCLUDE SURROUNDING AREA
+   Polygon is for visualization, but costs are affected by surroundings
 ---------------------------------------------------- */
-export const fetchPopulationDensityData = async (bounds) => {
+const expandBounds = (bounds, bufferKm = 5) => {
+    // Calculate buffer in degrees (approximate)
+    // 1 degree latitude ≈ 111 km
+    const bufferDegrees = bufferKm / 111;
+
+    const lats = bounds.map(coord => coord[0]);
+    const lngs = bounds.map(coord => coord[1]);
+
+    const minLat = Math.min(...lats) - bufferDegrees;
+    const maxLat = Math.max(...lats) + bufferDegrees;
+    const minLng = Math.min(...lngs) - bufferDegrees;
+    const maxLng = Math.max(...lngs) + bufferDegrees;
+
+    // Return expanded rectangular bounds
+    return [
+        [minLat, minLng],
+        [minLat, maxLng],
+        [maxLat, maxLng],
+        [maxLat, minLng]
+    ];
+};
+
+/* ----------------------------------------------------
+   FETCH POPULATION DENSITY DATA FROM DATABASE
+   Fetches from expanded area (polygon + buffer) to account for surroundings
+---------------------------------------------------- */
+export const fetchPopulationDensityData = async (bounds, includeBuffer = true) => {
     try {
+        // Expand bounds to include surrounding area for cost calculations
+        const searchBounds = includeBuffer ? expandBounds(bounds, 5) : bounds;
+
         const response = await fetch('/api/population_density', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ bounds })
+            body: JSON.stringify({ bounds: searchBounds })
         });
 
         if (!response.ok) throw new Error('Failed to fetch population density data');
 
         const { densityData } = await response.json();
+        console.log(`Fetched ${densityData.length} density zones from ${includeBuffer ? 'expanded' : 'polygon'} area`);
         return densityData;
     } catch (error) {
         console.error('Error fetching population density data:', error);
@@ -41,22 +72,33 @@ export const fetchPopulationDensityData = async (bounds) => {
 
 /* ----------------------------------------------------
    CALCULATE POPULATION DENSITY COST
-   Cost inversely proportional to density (high density = low cost = favorable)
+   Simple formula: cost = density * weight
+   Also considers proximity to density centers (similar to charging stations)
 ---------------------------------------------------- */
-export const calculatePopulationDensityCost = (cells, densityData) => {
+export const calculatePopulationDensityCost = (cells, densityData, chargingStations = []) => {
     if (!densityData || densityData.length === 0) {
         console.log('No population density data provided for cost calculation');
         return cells;
     }
 
-    // EV penetration rate estimate (adjust based on Kerala data)
-    const EV_PENETRATION_RATE = 0.02; // 2% of vehicles are EVs
-    const VEHICLE_OWNERSHIP_RATE = 0.114; // 11.4% of population owns vehicles
+    // WEIGHT CONSTANT - Adjust this to control cost impact
+    const WEIGHT = -10000;
 
     console.log('\n=== APPLYING POPULATION DENSITY COST ===');
     console.log(`Processing ${cells.length} cells based on ${densityData.length} density zones`);
-    console.log(`EV penetration rate: ${(EV_PENETRATION_RATE * 100).toFixed(1)}%`);
-    console.log(`Vehicle ownership rate: ${(VEHICLE_OWNERSHIP_RATE * 100).toFixed(1)}%\n`);
+    console.log(`Charging stations for proximity: ${chargingStations.length}`);
+    console.log(`Weight constant: ${WEIGHT}\n`);
+
+    // Display density centers
+    console.log('=== DENSITY CENTERS ===');
+    console.table(densityData.map((zone, idx) => ({
+        id: idx + 1,
+        latitude: zone.latitude.toFixed(6),
+        longitude: zone.longitude.toFixed(6),
+        density_per_m2: zone.density_per_m2,
+        area: zone.area,
+        population: zone.population
+    })));
 
     cells.forEach((cell) => {
         let totalWeightedDensity = 0;
@@ -79,68 +121,49 @@ export const calculatePopulationDensityCost = (cells, densityData) => {
 
             if (distance <= influenceRadius) {
                 // Weight decreases with distance from zone center
-                const weight = Math.max(0, 1 - (distance / influenceRadius));
+                const distanceWeight = Math.max(0, 1 - (distance / influenceRadius));
 
-                // Calculate EV vehicle density per m²
-                const evVehicleDensity = zone.density_per_m2 * VEHICLE_OWNERSHIP_RATE * EV_PENETRATION_RATE;
-
-                totalWeightedDensity += evVehicleDensity * weight;
-                totalWeight += weight;
+                totalWeightedDensity += zone.density_per_m2 * distanceWeight;
+                totalWeight += distanceWeight;
             }
         });
 
         if (totalWeight > 0) {
-            const avgEvDensity = totalWeightedDensity / totalWeight;
+            const avgDensity = totalWeightedDensity / totalWeight;
 
             // Store density for reference
-            cell.evVehicleDensity = avgEvDensity;
+            cell.density = avgDensity;
 
-            // Cost calculation: Higher EV density = Higher demand = LOWER cost (more favorable)
-            // We invert the relationship: cost decreases as density increases
-            // Normalize and invert: high density (e.g., 0.001) should give low cost
-            // Use logarithmic scale to handle wide range of densities
+            // Simple formula: cost = density * weight
+            const densityCost = Math.round(avgDensity * WEIGHT);
 
-            if (avgEvDensity > 0) {
-                // Maximum benefit cost reduction (up to -50 cost points for high density areas)
-                const MAX_DENSITY_BENEFIT = -50;
-
-                // Logarithmic scaling: higher density = more negative cost (benefit)
-                // Typical range: avgEvDensity from 0.000001 to 0.01
-                const densityScore = Math.log10(avgEvDensity * 1000000 + 1); // Normalize to positive range
-                const densityBenefit = Math.min(0, (densityScore / 10) * MAX_DENSITY_BENEFIT);
-
-                cell.cost += Math.round(densityBenefit);
-                cell.densityCostAdjustment = Math.round(densityBenefit);
-            } else {
-                cell.evVehicleDensity = 0;
-                cell.densityCostAdjustment = 0;
-            }
+            cell.cost += densityCost;
+            cell.densityCostAdjustment = densityCost;
         } else {
-            // No density zones nearby - slight penalty for unknown areas
-            cell.evVehicleDensity = 0;
-            cell.densityCostAdjustment = 10; // Small penalty
-            cell.cost += 10;
+            // No density zones nearby
+            cell.density = 0;
+            cell.densityCostAdjustment = 0;
         }
     });
 
     // Log statistics
     const cellsInPolygon = cells.filter(c => c.inPolygon);
-    const cellsWithDensity = cellsInPolygon.filter(c => c.evVehicleDensity > 0);
+    const cellsWithDensity = cellsInPolygon.filter(c => c.density > 0);
     const avgDensity = cellsWithDensity.length > 0
-        ? cellsWithDensity.reduce((sum, c) => sum + c.evVehicleDensity, 0) / cellsWithDensity.length
+        ? cellsWithDensity.reduce((sum, c) => sum + c.density, 0) / cellsWithDensity.length
         : 0;
     const maxDensity = cellsWithDensity.length > 0
-        ? Math.max(...cellsWithDensity.map(c => c.evVehicleDensity))
+        ? Math.max(...cellsWithDensity.map(c => c.density))
         : 0;
     const minDensity = cellsWithDensity.length > 0
-        ? Math.min(...cellsWithDensity.map(c => c.evVehicleDensity))
+        ? Math.min(...cellsWithDensity.map(c => c.density))
         : 0;
 
-    console.log('=== POPULATION DENSITY COST RESULTS ===');
+    console.log('\n=== POPULATION DENSITY COST RESULTS ===');
     console.log(`Cells in polygon: ${cellsInPolygon.length}`);
     console.log(`Cells with density data: ${cellsWithDensity.length}`);
     console.log(`Cells without density data: ${cellsInPolygon.length - cellsWithDensity.length}`);
-    console.log(`EV Vehicle Density statistics (vehicles per m²):`);
+    console.log(`Density statistics (per m²):`);
     console.log(`  - Min density: ${minDensity.toExponential(3)}`);
     console.log(`  - Max density: ${maxDensity.toExponential(3)}`);
     console.log(`  - Average density: ${avgDensity.toExponential(3)}`);
@@ -148,42 +171,19 @@ export const calculatePopulationDensityCost = (cells, densityData) => {
 
     // Display sample of cells with density adjustments
     const sortedByDensity = cellsInPolygon
-        .filter(c => c.evVehicleDensity > 0)
+        .filter(c => c.density > 0)
         .slice()
-        .sort((a, b) => b.evVehicleDensity - a.evVehicleDensity);
+        .sort((a, b) => b.density - a.density);
     const sampleSize = Math.min(20, sortedByDensity.length);
 
-    console.log(`=== TOP ${sampleSize} CELLS BY EV VEHICLE DENSITY ===`);
+    console.log(`=== TOP ${sampleSize} CELLS BY DENSITY ===`);
     console.table(sortedByDensity.slice(0, sampleSize).map((cell, idx) => ({
         rank: idx + 1,
         centerLat: cell.centerLat.toFixed(6),
         centerLng: cell.centerLng.toFixed(6),
-        evDensity: cell.evVehicleDensity.toExponential(3),
+        density: cell.density.toExponential(3),
         costAdjustment: cell.densityCostAdjustment,
         totalCost: cell.cost
-    })));
-
-    // Cost adjustment distribution
-    const adjustmentRanges = {
-        'High Benefit (-50 to -30)': 0,
-        'Medium Benefit (-30 to -10)': 0,
-        'Low Benefit (-10 to 0)': 0,
-        'No Data (>0)': 0
-    };
-
-    cellsInPolygon.forEach(cell => {
-        const adj = cell.densityCostAdjustment || 0;
-        if (adj <= -30) adjustmentRanges['High Benefit (-50 to -30)']++;
-        else if (adj <= -10) adjustmentRanges['Medium Benefit (-30 to -10)']++;
-        else if (adj < 0) adjustmentRanges['Low Benefit (-10 to 0)']++;
-        else adjustmentRanges['No Data (>0)']++;
-    });
-
-    console.log('\n=== DENSITY COST ADJUSTMENT DISTRIBUTION ===');
-    console.table(Object.entries(adjustmentRanges).map(([range, count]) => ({
-        adjustmentRange: range,
-        cellCount: count,
-        percentage: `${(100 * count / cellsInPolygon.length).toFixed(1)}%`
     })));
 
     console.log('\n');
