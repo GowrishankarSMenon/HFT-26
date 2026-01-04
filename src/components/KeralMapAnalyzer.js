@@ -1,9 +1,10 @@
-'use client';
-
 import React, { useState, useEffect, useRef } from 'react';
-import { MapPin, Zap, Car, Users, DollarSign, Maximize2, Trash2, Download, Info } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import Header from './Header';
+import MapView from './MapView';
+import StatsPanel from './StatsPanel';
+import { generateStats, generateRandomPointsInPolygon, generateGridCells, visualizeGridCells } from '../utils/mapUtils';
 
 const KeralMapAnalyzer = () => {
   const mapRef = useRef(null);
@@ -12,171 +13,13 @@ const KeralMapAnalyzer = () => {
   const [polygon, setPolygon] = useState(null);
   const [stats, setStats] = useState(null);
   const [currentPath, setCurrentPath] = useState([]);
+  const [showCharging, setShowCharging] = useState(false);
   const [showPetrol, setShowPetrol] = useState(false);
-  const [showEv, setShowEv] = useState(false);
-  const petrolLayerRef = useRef(null);
-  const evLayerRef = useRef(null);
-
-  // Real Kerala district data based on research
-  const districtData = {
-    thiruvananthapuram: { density: 1509, evPenetration: 0.135, income: 23417, evStationsPerKm: 0.045 },
-    kollam: { density: 1056, evPenetration: 0.13, income: 22100, evStationsPerKm: 0.04 },
-    pathanamthitta: { density: 640, evPenetration: 0.125, income: 21800, evStationsPerKm: 0.035 },
-    alappuzha: { density: 1501, evPenetration: 0.14, income: 22500, evStationsPerKm: 0.042 },
-    kottayam: { density: 847, evPenetration: 0.128, income: 24000, evStationsPerKm: 0.038 },
-    idukki: { density: 254, evPenetration: 0.11, income: 20500, evStationsPerKm: 0.025 },
-    ernakulam: { density: 1072, evPenetration: 0.145, income: 33810, evStationsPerKm: 0.055 },
-    thrissur: { density: 1508, evPenetration: 0.135, income: 23200, evStationsPerKm: 0.044 },
-    palakkad: { density: 510, evPenetration: 0.12, income: 21000, evStationsPerKm: 0.032 },
-    malappuram: { density: 1158, evPenetration: 0.13, income: 20800, evStationsPerKm: 0.037 },
-    kozhikode: { density: 1318, evPenetration: 0.138, income: 24500, evStationsPerKm: 0.046 },
-    wayanad: { density: 383, evPenetration: 0.108, income: 19500, evStationsPerKm: 0.028 },
-    kannur: { density: 852, evPenetration: 0.132, income: 22300, evStationsPerKm: 0.04 },
-    kasaragod: { density: 519, evPenetration: 0.125, income: 21200, evStationsPerKm: 0.034 }
-  };
-
-  // Find nearest district based on polygon center
-  const findNearestDistrict = (latlngs) => {
-    const center = latlngs.reduce((acc, [lat, lng]) => {
-      acc.lat += lat; acc.lng += lng; return acc;
-    }, {lat: 0, lng: 0});
-    center.lat /= latlngs.length;
-    center.lng /= latlngs.length;
-
-    // Simplified district mapping based on coordinates
-    if (center.lat > 11.5) return 'kasaragod';
-    if (center.lat > 11.2) return 'kannur';
-    if (center.lat > 10.9) return 'kozhikode';
-    if (center.lat > 10.7) return 'malappuram';
-    if (center.lat > 10.5) return 'thrissur';
-    if (center.lat > 10.2) return 'ernakulam';
-    if (center.lat > 9.9) return 'kottayam';
-    if (center.lat > 9.6) return 'alappuzha';
-    if (center.lat > 9.3) return 'pathanamthitta';
-    if (center.lat > 9.0) return 'kollam';
-    if (center.lng > 76.8) return 'idukki';
-    if (center.lng > 76.5) return 'palakkad';
-    if (center.lng < 76.3) return 'wayanad';
-    return 'thiruvananthapuram';
-  };
-
-  // Generate realistic stats based on Kerala data
-  const generateStats = (bounds) => {
-    const area = calculateArea(bounds);
-    const district = findNearestDistrict(bounds);
-    const data = districtData[district];
-    
-    // Calculate population based on area and district density
-    const population = Math.floor(area * data.density);
-    
-    // Calculate vehicles based on Kerala statistics
-    // Kerala has ~4M vehicles for 35M population (vehicle ownership ~11.4%)
-    const totalVehicles = Math.floor(population * 0.114);
-    const evVehicles = Math.floor(totalVehicles * data.evPenetration);
-    const petrolVehicles = totalVehicles - evVehicles;
-    
-    // Calculate EV stations based on area and district infrastructure
-    // Kerala has ~960 charging stations across 38,852 km² (as of Feb 2024)
-    const evStations = Math.max(1, Math.floor(area * data.evStationsPerKm));
-    
-    return {
-      area: area.toFixed(2),
-      coordinates: bounds.map(([lat, lng]) => `${lat.toFixed(4)}, ${lng.toFixed(4)}`),
-      evStations: evStations,
-      petrolVehicles: petrolVehicles,
-      evVehicles: evVehicles,
-      population: population,
-      avgIncome: data.income,
-      district: district.charAt(0).toUpperCase() + district.slice(1),
-      evPenetration: (data.evPenetration * 100).toFixed(1),
-      density: Math.floor(population / area)
-    };
-  };
-
-  const calculateArea = (coords) => {
-    if (coords.length < 3) return 0;
-    let area = 0;
-    for (let i = 0; i < coords.length; i++) {
-      const j = (i + 1) % coords.length;
-      area += coords[i][0] * coords[j][1];
-      area -= coords[j][0] * coords[i][1];
-    }
-    return Math.abs(area / 2) * 12321; // Rough km² conversion
-  };
-
-  // Point-in-polygon (ray-casting) to test generated points
-  const pointInPolygon = (point, vs) => {
-    const x = point[1], y = point[0];
-    let inside = false;
-    for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
-      const xi = vs[i][1], yi = vs[i][0];
-      const xj = vs[j][1], yj = vs[j][0];
-
-      const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi + 0.0) + xi);
-      if (intersect) inside = !inside;
-    }
-    return inside;
-  };
-
-  const randomPointInBounds = (bounds) => {
-    const lats = bounds.map(b => b[0]);
-    const lngs = bounds.map(b => b[1]);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs);
-    const maxLng = Math.max(...lngs);
-    const lat = minLat + Math.random() * (maxLat - minLat);
-    const lng = minLng + Math.random() * (maxLng - minLng);
-    return [lat, lng];
-  };
-
-  const generateRandomPointsInPolygon = (polyCoords, count) => {
-    if (!polyCoords || polyCoords.length === 0) return [];
-    const points = [];
-    let attempts = 0;
-    while (points.length < count && attempts < count * 50) {
-      const p = randomPointInBounds(polyCoords);
-      if (pointInPolygon(p, polyCoords)) points.push(p);
-      attempts++;
-    }
-    return points;
-  };
-
-  const plotMarkers = (type) => {
-    if (!map) return;
-    // Decide count based on stats and type
-    const poly = currentPath.length >= 3 ? currentPath : null;
-    let points = [];
-    if (type === 'charging') {
-      const count = stats ? Math.max(1, stats.evStations) : 10;
-      points = poly ? generateRandomPointsInPolygon(poly, count) : generateRandomPointsInPolygon([[10.5,75.5],[11.5,75.5],[11.5,77.5],[10.5,77.5]], count);
-      const layer = L.layerGroup();
-      points.forEach((p, i) => {
-        const marker = L.circleMarker(p, { radius: 6, color: '#059669', fillColor: '#10b981', fillOpacity: 0.9 });
-        marker.bindPopup(`<strong>Charging Station</strong><br/>ID: CH-${i + 1}`);
-        layer.addLayer(marker);
-      });
-      layer.addTo(map);
-      setChargingLayer(layer);
-    } else if (type === 'petrol') {
-      // Estimate number of petrol stations from petrol vehicle count
-      const count = stats ? Math.max(3, Math.floor(stats.petrolVehicles / 2000)) : 20;
-      points = poly ? generateRandomPointsInPolygon(poly, count) : generateRandomPointsInPolygon([[10.5,75.5],[11.5,75.5],[11.5,77.5],[10.5,77.5]], count);
-      const layer = L.layerGroup();
-      points.forEach((p, i) => {
-        const marker = L.circleMarker(p, { radius: 5, color: '#b91c1c', fillColor: '#ef4444', fillOpacity: 0.9 });
-        marker.bindPopup(`<strong>Petrol Station</strong><br/>ID: P-${i + 1}`);
-        layer.addLayer(marker);
-      });
-      layer.addTo(map);
-      setPetrolLayer(layer);
-    }
-  };
-
-  const clearMarkerLayers = () => {
-    if (petrolLayer && map) { petrolLayer.remove(); setPetrolLayer(null); }
-    if (chargingLayer && map) { chargingLayer.remove(); setChargingLayer(null); }
-  };
+  const [chargingLayer, setChargingLayer] = useState(null);
+  const [petrolLayer, setPetrolLayer] = useState(null);
+  const [gridLayer, setGridLayer] = useState(null);
+  const [showGrid, setShowGrid] = useState(false);
+  const gridLayerRef = useRef(null);
 
   useEffect(() => {
     const mapInstance = L.map(mapRef.current).setView([10.8505, 76.2711], 8);
@@ -188,10 +31,44 @@ const KeralMapAnalyzer = () => {
 
     setMap(mapInstance);
 
-    return () => {
-      mapInstance.remove();
-    };
+    return () => mapInstance.remove();
   }, []);
+
+  const plotMarkers = (type) => {
+    if (!map) return;
+    const poly = currentPath.length >= 3 ? currentPath : null;
+    let points = [];
+    
+    if (type === 'charging') {
+      const count = stats ? Math.max(1, stats.evStations) : 10;
+      points = poly ? generateRandomPointsInPolygon(poly, count) : 
+        generateRandomPointsInPolygon([[10.5,75.5],[11.5,75.5],[11.5,77.5],[10.5,77.5]], count);
+      const layer = L.layerGroup();
+      points.forEach((p, i) => {
+        const marker = L.circleMarker(p, { 
+          radius: 6, color: '#059669', fillColor: '#10b981', fillOpacity: 0.9 
+        });
+        marker.bindPopup(`<strong>Charging Station</strong><br/>ID: CH-${i + 1}`);
+        layer.addLayer(marker);
+      });
+      layer.addTo(map);
+      setChargingLayer(layer);
+    } else if (type === 'petrol') {
+      const count = stats ? Math.max(3, Math.floor(stats.petrolVehicles / 2000)) : 20;
+      points = poly ? generateRandomPointsInPolygon(poly, count) : 
+        generateRandomPointsInPolygon([[10.5,75.5],[11.5,75.5],[11.5,77.5],[10.5,77.5]], count);
+      const layer = L.layerGroup();
+      points.forEach((p, i) => {
+        const marker = L.circleMarker(p, { 
+          radius: 5, color: '#b91c1c', fillColor: '#ef4444', fillOpacity: 0.9 
+        });
+        marker.bindPopup(`<strong>Petrol Station</strong><br/>ID: P-${i + 1}`);
+        layer.addLayer(marker);
+      });
+      layer.addTo(map);
+      setPetrolLayer(layer);
+    }
+  };
 
   const startDrawing = () => {
     if (!map) return;
@@ -211,9 +88,7 @@ const KeralMapAnalyzer = () => {
     const newPath = [...currentPath, [latlng.lat, latlng.lng]];
     setCurrentPath(newPath);
 
-    if (polygon) {
-      map.removeLayer(polygon);
-    }
+    if (polygon) map.removeLayer(polygon);
 
     const newPolygon = L.polygon(newPath, {
       color: '#3b82f6',
@@ -226,15 +101,30 @@ const KeralMapAnalyzer = () => {
   };
 
   const finishDrawing = () => {
-    if (currentPath.length < 3) {
-      alert('Please draw at least 3 points to create a polygon');
-      return;
-    }
-    
-    setDrawing(false);
-    const generatedStats = generateStats(currentPath);
-    setStats(generatedStats);
-  };
+  if (currentPath.length < 3) {
+    alert('Please draw at least 3 points to create a polygon');
+    return;
+  }
+
+  setDrawing(false);
+
+  const generatedStats = generateStats(currentPath);
+  setStats(generatedStats);
+
+  // 🔹 Generate grid cells
+  const cells = generateGridCells(currentPath);
+  console.log('Total grid cells generated:', cells.length);
+
+  // 🔹 CLEAR old grid layer if it exists
+  if (gridLayerRef.current) {
+    gridLayerRef.current.remove();
+    gridLayerRef.current = null;
+  }
+
+  // 🔹 VISUALIZE grid cells
+  gridLayerRef.current = visualizeGridCells(map, cells);
+};
+
 
   const clearPolygon = () => {
     if (polygon && map) {
@@ -243,19 +133,13 @@ const KeralMapAnalyzer = () => {
       setStats(null);
       setCurrentPath([]);
       setDrawing(false);
-      // clear any markers
-      if (petrolLayerRef.current) {
-        petrolLayerRef.current.clearLayers();
-        petrolLayerRef.current.remove();
-        petrolLayerRef.current = null;
-      }
-      if (evLayerRef.current) {
-        evLayerRef.current.clearLayers();
-        evLayerRef.current.remove();
-        evLayerRef.current = null;
-      }
+      if (petrolLayer) { petrolLayer.remove(); setPetrolLayer(null); }
+      if (chargingLayer) { chargingLayer.remove(); setChargingLayer(null); }
+      if (gridLayer) { gridLayer.remove(); setGridLayer(null); }
+      if (gridLayerRef.current) { gridLayerRef.current.remove(); gridLayerRef.current = null; }
       setShowPetrol(false);
-      setShowEv(false);
+      setShowCharging(false);
+      setShowGrid(false);
     }
   };
 
@@ -270,67 +154,114 @@ const KeralMapAnalyzer = () => {
     a.click();
   };
 
-  // Utility: point-in-polygon (ray-casting)
-  const isPointInPolygon = (point, vs) => {
-    const x = point[0], y = point[1];
+  const generateGridCellsLocal = (polygonCoords) => {
+    if (!polygonCoords || polygonCoords.length < 3) return [];
+
+    const lats = polygonCoords.map(p => p[0]);
+    const lngs = polygonCoords.map(p => p[1]);
+
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLng = Math.min(...lngs);
+    const maxLng = Math.max(...lngs);
+
+    const CELL_AREA = 50; // m²
+    const CELL_SIDE = Math.sqrt(CELL_AREA);
+    const METERS_PER_DEGREE_LAT = 111320;
+    const METERS_PER_DEGREE_LNG = 111320 * Math.cos(10.85 * Math.PI / 180);
+
+    const latStep = CELL_SIDE / METERS_PER_DEGREE_LAT;
+    const lngStep = CELL_SIDE / METERS_PER_DEGREE_LNG;
+
+    const cells = [];
+
+    for (let lat = minLat; lat <= maxLat; lat += latStep) {
+      for (let lng = minLng; lng <= maxLng; lng += lngStep) {
+        const cellCorners = [
+          [lat, lng],
+          [lat + latStep, lng],
+          [lat + latStep, lng + lngStep],
+          [lat, lng + lngStep]
+        ];
+
+        if (cellIntersectsPolygonLocal(cellCorners, polygonCoords)) {
+          cells.push({
+            centerLat: lat + latStep / 2,
+            centerLng: lng + lngStep / 2,
+            cost: 0
+          });
+        }
+      }
+    }
+
+    return cells;
+  };
+
+  const cellIntersectsPolygonLocal = (cellCorners, polygon) => {
+    for (const corner of cellCorners) {
+      if (pointInPolygonLocal(corner, polygon)) return true;
+    }
+
+    const lats = cellCorners.map(p => p[0]);
+    const lngs = cellCorners.map(p => p[1]);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLng = Math.min(...lngs);
+    const maxLng = Math.max(...lngs);
+
+    for (const [plat, plng] of polygon) {
+      if (plat >= minLat && plat <= maxLat && plng >= minLng && plng <= maxLng) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  const pointInPolygonLocal = (point, vs) => {
+    const x = point[1], y = point[0];
     let inside = false;
     for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
-      const xi = vs[i][0], yi = vs[i][1];
-      const xj = vs[j][0], yj = vs[j][1];
-
+      const xi = vs[i][1], yi = vs[i][0];
+      const xj = vs[j][1], yj = vs[j][0];
       const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi + 0.0) + xi);
       if (intersect) inside = !inside;
     }
     return inside;
   };
 
-  const generateRandomPointInBounds = (bounds) => {
-    const latMin = Math.min(...bounds.map(b => b[0]));
-    const latMax = Math.max(...bounds.map(b => b[0]));
-    const lngMin = Math.min(...bounds.map(b => b[1]));
-    const lngMax = Math.max(...bounds.map(b => b[1]));
-    const lat = latMin + Math.random() * (latMax - latMin);
-    const lng = lngMin + Math.random() * (lngMax - lngMin);
-    return [lat, lng];
-  };
-
-  const generateStations = (bounds, count = 10, type = 'petrol') => {
-    if (!map) return null;
-    const markers = [];
-    let attempts = 0;
-    while (markers.length < count && attempts < count * 20) {
-      const pt = generateRandomPointInBounds(bounds);
-      if (isPointInPolygon(pt, bounds)) {
-        const marker = L.marker(pt, {
-          title: type === 'petrol' ? 'Petrol Station' : 'Charging Station',
-        });
-        markers.push(marker);
-      }
-      attempts++;
+  const handleToggleCharging = () => {
+    const next = !showCharging;
+    setShowCharging(next);
+    if (!next) {
+      if (chargingLayer) { chargingLayer.remove(); setChargingLayer(null); }
+    } else {
+      plotMarkers('charging');
     }
-    return markers;
   };
 
-  const addPetrolMarkers = (bounds) => {
-    if (!map) return;
-    if (petrolLayerRef.current) petrolLayerRef.current.clearLayers();
-    const layer = L.layerGroup().addTo(map);
-    petrolLayerRef.current = layer;
-    const markers = generateStations(bounds, 12, 'petrol');
-    markers.forEach(m => {
-      m.addTo(layer).bindPopup('Petrol Station');
-    });
+  const handleTogglePetrol = () => {
+    const next = !showPetrol;
+    setShowPetrol(next);
+    if (!next) {
+      if (petrolLayer) { petrolLayer.remove(); setPetrolLayer(null); }
+    } else {
+      plotMarkers('petrol');
+    }
   };
 
-  const addEvMarkers = (bounds) => {
-    if (!map) return;
-    if (evLayerRef.current) evLayerRef.current.clearLayers();
-    const layer = L.layerGroup().addTo(map);
-    evLayerRef.current = layer;
-    const markers = generateStations(bounds, 8, 'ev');
-    markers.forEach(m => {
-      m.addTo(layer).bindPopup('Charging Station');
-    });
+  const handleToggleGrid = () => {
+    const next = !showGrid;
+    setShowGrid(next);
+    if (!next) {
+      if (gridLayer) { gridLayer.remove(); setGridLayer(null); }
+    } else {
+      if (stats && currentPath.length >= 3) {
+        const cells = generateGridCellsLocal(currentPath);
+        const layer = visualizeGridCells(map, cells);
+        setGridLayer(layer);
+      }
+    }
   };
 
   useEffect(() => {
@@ -340,252 +271,35 @@ const KeralMapAnalyzer = () => {
     }
   }, [map, drawing, currentPath]);
 
-  // watch toggles
-  useEffect(() => {
-    if (!stats) return;
-    const bounds = currentPath;
-    if (showPetrol) addPetrolMarkers(bounds);
-    else if (petrolLayerRef.current) {
-      petrolLayerRef.current.clearLayers();
-    }
-  }, [showPetrol]);
-
-  useEffect(() => {
-    if (!stats) return;
-    const bounds = currentPath;
-    if (showEv) addEvMarkers(bounds);
-    else if (evLayerRef.current) {
-      evLayerRef.current.clearLayers();
-    }
-  }, [showEv]);
-
   return (
     <div className="h-screen w-full flex flex-col bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Kerala Map Analyzer</h1>
-            <p className="text-sm text-gray-600 mt-1">Draw polygons to analyze EV infrastructure and demographics using real Kerala data</p>
-          </div>
-          <div className="flex gap-3">
-            {!drawing ? (
-              <button
-                onClick={startDrawing}
-                className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
-              >
-                <MapPin size={18} />
-                Start Drawing
-              </button>
-            ) : (
-              <button
-                onClick={finishDrawing}
-                className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium"
-              >
-                <Maximize2 size={18} />
-                Finish Polygon
-              </button>
-            )}
-            {/* Toggle markers */}
-            <button
-              onClick={() => {
-                const next = !showEv;
-                setShowEv(next);
-                if (!next) {
-                  if (evLayerRef.current) { evLayerRef.current.clearLayers(); evLayerRef.current.remove(); evLayerRef.current = null; }
-                } else {
-                  addEvMarkers(currentPath);
-                }
-              }}
-              disabled={!stats}
-              title={!stats ? 'Draw a polygon first' : 'Toggle charging stations'}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-medium ${!stats ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : (showEv ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-green-100 text-green-800 hover:bg-green-200')}`}
-            >
-              <Zap size={16} />
-              {showEv ? 'Hide Charging' : 'Show Charging'}
-            </button>
-            <button
-              onClick={() => {
-                const next = !showPetrol;
-                setShowPetrol(next);
-                if (!next) {
-                  if (petrolLayerRef.current) { petrolLayerRef.current.clearLayers(); petrolLayerRef.current.remove(); petrolLayerRef.current = null; }
-                } else {
-                  addPetrolMarkers(currentPath);
-                }
-              }}
-              disabled={!stats}
-              title={!stats ? 'Draw a polygon first' : 'Toggle petrol stations'}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-medium ${!stats ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : (showPetrol ? 'bg-yellow-600 text-white hover:bg-yellow-700' : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200')}`}
-            >
-              <Car size={16} />
-              {showPetrol ? 'Hide Petrol' : 'Show Petrol'}
-            </button>
-            {polygon && (
-              <>
-                <button
-                  onClick={clearPolygon}
-                  className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors font-medium"
-                >
-                  <Trash2 size={18} />
-                  Clear
-                </button>
-                <button
-                  onClick={exportData}
-                  className="flex items-center gap-2 bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors font-medium"
-                >
-                  <Download size={18} />
-                  Export
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
+      <Header
+        drawing={drawing}
+        onStartDrawing={startDrawing}
+        onFinishDrawing={finishDrawing}
+        showCharging={showCharging}
+        showPetrol={showPetrol}
+        onToggleCharging={handleToggleCharging}
+        onTogglePetrol={handleTogglePetrol}
+        hasPolygon={!!polygon}
+        onClear={clearPolygon}
+        onExport={exportData}
+        showGrid={showGrid}
+        onToggleGrid={handleToggleGrid}
+      />
+      
       <div className="flex-1 flex overflow-hidden">
-        {/* Map */}
-        <div className="flex-1 relative">
-          <div ref={mapRef} className="w-full h-full" />
-          {drawing && (
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg font-medium">
-              Click on map to draw polygon • {currentPath.length} points
-            </div>
-          )}
-          
-          {/* Data Source Info */}
-          <div className="absolute bottom-4 left-4 bg-white px-3 py-2 rounded-lg shadow-md text-xs text-gray-600 flex items-center gap-2 max-w-xs">
-            <Info size={14} className="flex-shrink-0" />
-            <span>Data based on Kerala Census 2024, RBI income reports, and KSEB EV infrastructure</span>
-          </div>
-        </div>
-
-        {/* Stats Panel */}
-        {stats && (
-          <div className="w-96 bg-white border-l border-gray-200 overflow-y-auto">
-            <div className="p-6">
-              <div className="mb-6">
-                <h2 className="text-xl font-bold text-gray-900">Area Analysis</h2>
-                <p className="text-sm text-gray-600 mt-1">District: {stats.district}</p>
-              </div>
-              
-              {/* Area */}
-              <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <Maximize2 size={20} className="text-blue-600" />
-                  <h3 className="font-semibold text-gray-900">Area</h3>
-                </div>
-                <p className="text-2xl font-bold text-blue-600">{stats.area} km²</p>
-              </div>
-
-              {/* EV Infrastructure */}
-              <div className="mb-6 p-4 bg-green-50 rounded-lg border border-green-200">
-                <div className="flex items-center gap-2 mb-3">
-                  <Zap size={20} className="text-green-600" />
-                  <h3 className="font-semibold text-gray-900">EV Infrastructure</h3>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Charging Stations</span>
-                    <span className="font-semibold text-gray-900">{stats.evStations}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">EV Vehicles</span>
-                    <span className="font-semibold text-gray-900">{stats.evVehicles.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">EV Penetration</span>
-                    <span className="font-semibold text-gray-900">{stats.evPenetration}%</span>
-                  </div>
-                </div>
-                <div className="mt-3 text-xs text-gray-500">
-                  Based on Kerala's 13.5% avg EV adoption rate (FY24)
-                </div>
-              </div>
-
-              {/* Vehicles */}
-              <div className="mb-6 p-4 bg-orange-50 rounded-lg border border-orange-200">
-                <div className="flex items-center gap-2 mb-3">
-                  <Car size={20} className="text-orange-600" />
-                  <h3 className="font-semibold text-gray-900">Vehicle Distribution</h3>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Petrol/Diesel</span>
-                    <span className="font-semibold text-gray-900">{stats.petrolVehicles.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Total Vehicles</span>
-                    <span className="font-semibold text-gray-900">{(stats.evVehicles + stats.petrolVehicles).toLocaleString()}</span>
-                  </div>
-                </div>
-                <div className="mt-3 text-xs text-gray-500">
-                  Based on Kerala's vehicle ownership rate of 11.4%
-                </div>
-              </div>
-
-              {/* Demographics */}
-              <div className="mb-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
-                <div className="flex items-center gap-2 mb-3">
-                  <Users size={20} className="text-purple-600" />
-                  <h3 className="font-semibold text-gray-900">Demographics</h3>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Population</span>
-                    <span className="font-semibold text-gray-900">{stats.population.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Density</span>
-                    <span className="font-semibold text-gray-900">{stats.density} per km²</span>
-                  </div>
-                </div>
-                <div className="mt-3 text-xs text-gray-500">
-                  Kerala state avg: 859 per km² (Census 2024)
-                </div>
-              </div>
-
-              {/* Income */}
-              <div className="mb-6 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <DollarSign size={20} className="text-yellow-600" />
-                  <h3 className="font-semibold text-gray-900">Average Income</h3>
-                </div>
-                <p className="text-2xl font-bold text-yellow-600">₹{stats.avgIncome.toLocaleString()}/month</p>
-                <div className="mt-3 text-xs text-gray-500">
-                  District per capita NSDP (2024): ₹{(stats.avgIncome * 12).toLocaleString()}/year
-                </div>
-              </div>
-
-              {/* Coordinates */}
-              <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <h3 className="font-semibold text-gray-900 mb-3">Polygon Coordinates</h3>
-                <div className="space-y-1 max-h-48 overflow-y-auto text-xs font-mono text-gray-600">
-                  {stats.coordinates.map((coord, i) => (
-                    <div key={i} className="py-1">
-                      Point {i + 1}: {coord}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Data Sources */}
-              <div className="mt-6 p-3 bg-gray-100 rounded-lg text-xs text-gray-600">
-                <p className="font-semibold mb-2">Data Sources:</p>
-                <ul className="space-y-1 list-disc list-inside">
-                  <li>Kerala Census 2024 (35.3M population)</li>
-                  <li>RBI Kerala Income Report 2024</li>
-                  <li>KSEB EV Infrastructure (960 stations)</li>
-                  <li>Kerala MVD Vehicle Statistics</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        )}
+        <MapView 
+          mapRef={mapRef} 
+          drawing={drawing} 
+          pointCount={currentPath.length} 
+        />
+        <StatsPanel stats={stats} />
       </div>
     </div>
   );
 };
 
 export default KeralMapAnalyzer;
+
+
