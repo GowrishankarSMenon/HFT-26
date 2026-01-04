@@ -46,14 +46,11 @@ export async function POST(request) {
         const database = await getDb();
 
         const query = `
-          SELECT Latitude, Longitude, "Status Code", "Access Code"
+          SELECT latitude, longitude, "status_code", "access_code"
           FROM ev_stations
-          WHERE Latitude BETWEEN ? AND ?
-            AND Longitude BETWEEN ? AND ?
-            AND "Status Code" = 'E'
-            AND "Access Code" = 'public';
-        `;
-        //const query = "SELECT * FROM ev_stations;";
+          WHERE latitude BETWEEN ? AND ?
+        AND longitude BETWEEN ? AND ?;
+    `;
 
         const stations = await database.all(query, [minLat, maxLat, minLng, maxLng]);
 

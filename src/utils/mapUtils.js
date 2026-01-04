@@ -252,7 +252,7 @@ export const fetchStationsFromDB = async (bounds, type = 'charging') => {
     if (!response.ok) throw new Error('Failed to fetch stations');
 
     const { stations } = await response.json();
-    return stations.map(s => [s.Latitude, s.Longitude]);
+    return stations.map(s => [s.latitude, s.longitude]);
   } catch (error) {
     console.error('Error fetching stations:', error);
     return [];
