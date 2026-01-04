@@ -6,52 +6,65 @@ import path from 'path';
 let db = null;
 
 async function getDb() {
-  if (db) return db;
-  console.log(path.join(process.cwd(), 'ev_stations.db'));
-  db = await open({
-    filename: path.join(process.cwd(), 'ev_stations.db'),
-    driver: sqlite3.Database
-  });
-  
-  return db;
-}   
+    if (db) return db;
+    const dbPath = path.join(process.cwd(), "cleaning", 'ev_stations.db');
+    console.log(dbPath);
 
-export async function POST(request) {
-  try {
-    const { bounds, type } = await request.json();
-    
-    if (!bounds || bounds.length < 3) {
-      return NextResponse.json({ error: 'Invalid bounds' }, { status: 400 });
+    const fs = require('fs');
+    if (!fs.existsSync(dbPath)) {
+        throw new Error(`Database file not found at ${dbPath}`);
     }
 
-    const lats = bounds.map(b => b[0]);
-    const lngs = bounds.map(b => b[1]);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs);
-    const maxLng = Math.max(...lngs);
+    db = await open({
+        filename: dbPath,
+        driver: sqlite3.Database,
+        mode: sqlite3.OPEN_READWRITE,
+        fileMustExist: true
+    });
 
-    const database = await getDb();
-    
-    const query = `
-      SELECT Latitude, Longitude, "Status Code", "Access Code"
-      FROM ev_stations
-      WHERE Latitude BETWEEN ? AND ?
-        AND Longitude BETWEEN ? AND ?
-        AND "Status Code" = 'E'
-        AND "Access Code" = 'public';
-    `;
+    const tables = await db.all("SELECT * FROM sqlite_master");
+    console.log('Available tables:', tables);
 
-    const stations = await database.all(query, [minLat, maxLat, minLng, maxLng]);
+    return db;
+}
 
-    console.log(`Found ${stations.length} stations in bounds`);
+export async function POST(request) {
+    try {
+        const { bounds, type } = await request.json();
 
-    return NextResponse.json({ stations });
-  } catch (error) {
-    console.error('Database error:', error);
-    return NextResponse.json({ 
-      error: 'Database query failed', 
-      details: error.message 
-    }, { status: 500 });
-  }
+        if (!bounds || bounds.length < 3) {
+            return NextResponse.json({ error: 'Invalid bounds' }, { status: 400 });
+        }
+
+        const lats = bounds.map(b => b[0]);
+        const lngs = bounds.map(b => b[1]);
+        const minLat = Math.min(...lats);
+        const maxLat = Math.max(...lats);
+        const minLng = Math.min(...lngs);
+        const maxLng = Math.max(...lngs);
+
+        const database = await getDb();
+
+        const query = `
+          SELECT Latitude, Longitude, "Status Code", "Access Code"
+          FROM ev_stations
+          WHERE Latitude BETWEEN ? AND ?
+            AND Longitude BETWEEN ? AND ?
+            AND "Status Code" = 'E'
+            AND "Access Code" = 'public';
+        `;
+        //const query = "SELECT * FROM ev_stations;";
+
+        const stations = await database.all(query, [minLat, maxLat, minLng, maxLng]);
+
+        console.log(`Found ${stations.length} stations in bounds`);
+
+        return NextResponse.json({ stations });
+    } catch (error) {
+        console.error('Database error:', error);
+        return NextResponse.json({
+            error: 'Database query failed',
+            details: error.message
+        }, { status: 500 });
+    }
 }
