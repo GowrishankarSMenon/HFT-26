@@ -23,38 +23,62 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
 };
 
 /**
- * Calculate the total benefit of placing a station at a specific location
- * This considers how the station would reduce costs in surrounding cells
+ * Create spatial grid index for faster nearest neighbor searches
  */
-const calculateOverallBenefit = (candidate, workingCells, alreadyPlacedStations) => {
-    const INFLUENCE_RADIUS = 5000; // 5km influence radius
-    const MAX_BENEFIT_PER_CELL = 100; // Maximum cost reduction per cell
+const createSpatialIndex = (cells) => {
+    const GRID_SIZE = 0.01; // ~1km grid cells
+    const index = new Map();
 
-    let totalBenefit = 0;
-    let cellsAffected = 0;
+    cells.forEach(cell => {
+        const gridX = Math.floor(cell.centerLat / GRID_SIZE);
+        const gridY = Math.floor(cell.centerLng / GRID_SIZE);
+        const key = `${gridX},${gridY}`;
 
-    // Calculate benefit to all surrounding cells
-    workingCells.forEach(cell => {
-        const distance = calculateDistance(
-            candidate.centerLat,
-            candidate.centerLng,
-            cell.centerLat,
-            cell.centerLng
-        );
-
-        if (distance <= INFLUENCE_RADIUS) {
-            // Linear decay: more benefit closer to station
-            const distanceRatio = distance / INFLUENCE_RADIUS;
-            const benefitToCell = MAX_BENEFIT_PER_CELL * (1 - distanceRatio);
-
-            // Weight the benefit by the cell's current cost
-            // High cost cells benefit more from a nearby station
-            const weightedBenefit = benefitToCell * Math.max(1, cell.cost / 1000);
-
-            totalBenefit += weightedBenefit;
-            cellsAffected++;
+        if (!index.has(key)) {
+            index.set(key, []);
         }
+        index.get(key).push(cell);
     });
+
+    return { index, GRID_SIZE };
+};
+
+/**
+ * Get cells within radius using spatial index
+ */
+const getCellsInRadius = (centerCell, radiusMeters, spatialIndex) => {
+    const { index, GRID_SIZE } = spatialIndex;
+    const radiusDegrees = radiusMeters / 111320; // Approximate conversion
+    const gridRadius = Math.ceil(radiusDegrees / GRID_SIZE);
+
+    const centerGridX = Math.floor(centerCell.centerLat / GRID_SIZE);
+    const centerGridY = Math.floor(centerCell.centerLng / GRID_SIZE);
+
+    const nearbyCells = [];
+
+    for (let dx = -gridRadius; dx <= gridRadius; dx++) {
+        for (let dy = -gridRadius; dy <= gridRadius; dy++) {
+            const key = `${centerGridX + dx},${centerGridY + dy}`;
+            const cells = index.get(key);
+            if (cells) {
+                nearbyCells.push(...cells);
+            }
+        }
+    }
+
+    return nearbyCells;
+};
+
+/**
+ * Calculate the suitability score for placing a station at a specific location
+ * OPTIMIZED VERSION with spatial indexing
+ * Lower score = better location (we minimize cost)
+ */
+const calculateLocationScore = (candidate, workingCells, alreadyPlacedStations, spatialIndex) => {
+    const INFLUENCE_RADIUS = 5000; // 5km influence radius
+
+    // Primary score: the candidate's own cost (lower is better)
+    let score = candidate.cost;
 
     // Penalize locations too close to already placed stations
     for (const station of alreadyPlacedStations) {
@@ -66,29 +90,30 @@ const calculateOverallBenefit = (candidate, workingCells, alreadyPlacedStations)
         );
 
         if (distanceToPlaced < INFLUENCE_RADIUS) {
-            // Reduce benefit based on proximity to existing new stations
-            const overlapPenalty = (1 - distanceToPlaced / INFLUENCE_RADIUS) * totalBenefit * 0.5;
-            totalBenefit -= overlapPenalty;
+            // Add penalty for proximity to existing new stations
+            // Closer = higher penalty
+            const overlapPenalty = (1 - distanceToPlaced / INFLUENCE_RADIUS) * 1000;
+            score += overlapPenalty;
         }
     }
 
-    return {
-        totalBenefit,
-        cellsAffected,
-        averageBenefit: cellsAffected > 0 ? totalBenefit / cellsAffected : 0,
-        candidateCost: candidate.cost
-    };
+    return score;
 };
 
 /**
  * Update costs in the proximal grid based on a newly placed charging station
- * This simulates how adding a new station affects the cost landscape
+ * OPTIMIZED VERSION with spatial indexing
  */
-const updateCostsWithNewStation = (workingCells, newStation) => {
+const updateCostsWithNewStation = (workingCells, newStation, spatialIndex) => {
     const INFLUENCE_RADIUS = 5000; // 5km influence radius for new station
     const MAX_COST_REDUCTION = 100; // Maximum cost reduction near the station
 
-    workingCells.forEach(cell => {
+    // Use spatial index to only update nearby cells (OPTIMIZED)
+    const nearbyCells = spatialIndex ?
+        getCellsInRadius(newStation, INFLUENCE_RADIUS, spatialIndex) :
+        workingCells;
+
+    nearbyCells.forEach(cell => {
         const distance = calculateDistance(
             cell.centerLat,
             cell.centerLng,
@@ -117,13 +142,14 @@ const updateCostsWithNewStation = (workingCells, newStation) => {
 
 /**
  * Find N optimal locations for EV charging stations
- * Now with dynamic cost updates as stations are placed
+ * OPTIMIZED VERSION with spatial indexing and progress reporting
  * @param {Array} cells - Grid cells with cost calculations
  * @param {number} n - Number of stations to place
  * @param {number} minDistanceKm - Minimum distance between stations in km (default 0.5km)
- * @returns {Array} Array of optimal locations with coordinates and cost info
+ * @param {Function} onProgress - Optional callback for progress updates
+ * @returns {Promise<Array>} Array of optimal locations with coordinates and cost info
  */
-export const findOptimalLocations = (cells, n, minDistanceKm = 0.5) => {
+export const findOptimalLocations = async (cells, n, minDistanceKm = 0.5, onProgress) => {
     // Filter to only cells inside the polygon
     const cellsInPolygon = cells.filter(c => c.inPolygon);
 
@@ -136,10 +162,15 @@ export const findOptimalLocations = (cells, n, minDistanceKm = 0.5) => {
     console.log(`Total cells in polygon: ${cellsInPolygon.length}`);
     console.log(`Requested stations: ${n}`);
     console.log(`Minimum distance between stations: ${minDistanceKm} km`);
-    console.log('NOTE: Using working copy of proximal grid - original cost map remains unchanged');
-    console.log('NOTE: Each placement considers overall benefit to surrounding area');
-    console.log('NOTE: Optimizing for minimal total cost across entire proximal grid');
+    console.log('NOTE: Using optimized spatial indexing for faster computation');
+    console.log('NOTE: Selecting locations with LOWEST cost (most favorable)');
+    console.log('NOTE: Each placement updates costs for next iteration');
     console.log('NOTE: All stations will be placed ONLY within the user-defined polygon\n');
+
+    // Create spatial index for faster lookups
+    console.log('Building spatial index...');
+    const spatialIndex = createSpatialIndex(cellsInPolygon);
+    console.log('✓ Spatial index created\n');
 
     // Create a deep copy of cells for working calculations
     const workingCells = cellsInPolygon.map(cell => ({
@@ -153,16 +184,36 @@ export const findOptimalLocations = (cells, n, minDistanceKm = 0.5) => {
     const optimalLocations = [];
     const minDistanceMeters = minDistanceKm * 1000;
 
-    // Iterative algorithm: Place stations one by one, considering overall grid benefit
+    // Iterative algorithm with progress reporting and optimization
     for (let stationNum = 0; stationNum < n; stationNum++) {
+        // Report progress
+        if (onProgress) {
+            const progress = ((stationNum) / n) * 100;
+            onProgress(progress);
+        }
+
+        // Allow UI to breathe every few iterations
+        if (stationNum % 2 === 0 && stationNum > 0) {
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+
         let bestCandidate = null;
-        let bestBenefitScore = -Infinity;
-        let bestBenefitDetails = null;
+        let bestScore = Infinity; // Lower score is better
+        let bestCandidateCost = null;
 
         console.log(`\n--- Evaluating candidates for Station ${stationNum + 1} ---`);
 
-        // Evaluate all valid candidates and find the one with maximum overall benefit
-        for (const candidate of workingCells) {
+        // Sample candidates for large datasets (limit evaluation for performance)
+        const MAX_CANDIDATES_TO_EVALUATE = 500;
+        const candidateStep = Math.max(1, Math.floor(workingCells.length / MAX_CANDIDATES_TO_EVALUATE));
+        const candidates = workingCells.filter((_, idx) => idx % candidateStep === 0);
+
+        console.log(`Evaluating ${candidates.length} candidate locations (sampled from ${workingCells.length} cells)`);
+
+        // Evaluate candidates and find the one with minimum score (lowest cost)
+        for (let i = 0; i < candidates.length; i++) {
+            const candidate = candidates[i];
+
             // Check if candidate is far enough from already selected locations
             let tooClose = false;
             for (const location of optimalLocations) {
@@ -181,14 +232,14 @@ export const findOptimalLocations = (cells, n, minDistanceKm = 0.5) => {
 
             if (tooClose) continue; // Skip this candidate
 
-            // Calculate the overall benefit this station would provide
-            const benefitAnalysis = calculateOverallBenefit(candidate, workingCells, optimalLocations);
+            // Calculate the suitability score (lower = better)
+            const score = calculateLocationScore(candidate, workingCells, optimalLocations, spatialIndex);
 
-            // The best candidate maximizes total benefit (not just has lowest individual cost)
-            if (benefitAnalysis.totalBenefit > bestBenefitScore) {
-                bestBenefitScore = benefitAnalysis.totalBenefit;
+            // The best candidate has the lowest score
+            if (score < bestScore) {
+                bestScore = score;
                 bestCandidate = candidate;
-                bestBenefitDetails = benefitAnalysis;
+                bestCandidateCost = candidate.cost;
             }
         }
 
@@ -202,38 +253,39 @@ export const findOptimalLocations = (cells, n, minDistanceKm = 0.5) => {
             latitude: bestCandidate.centerLat,
             longitude: bestCandidate.centerLng,
             cost: bestCandidate.cost,
+            score: bestScore,
             nearestStationDistance: bestCandidate.nearestStationDistance === Infinity ? 0 : bestCandidate.nearestStationDistance,
             density: bestCandidate.density,
             adoptionLikelihood: bestCandidate.adoptionLikelihood,
-            stationNumber: stationNum + 1,
-            overallBenefit: bestBenefitDetails.totalBenefit,
-            cellsAffected: bestBenefitDetails.cellsAffected,
-            averageBenefit: bestBenefitDetails.averageBenefit
+            stationNumber: stationNum + 1
         };
 
         optimalLocations.push(newLocation);
 
         console.log(`✓ Station ${stationNum + 1}: Placed at (${newLocation.latitude.toFixed(6)}, ${newLocation.longitude.toFixed(6)})`);
-        console.log(`  Cell Cost: ${newLocation.cost.toFixed(2)} | Overall Benefit: ${newLocation.overallBenefit.toFixed(2)} | Affects ${newLocation.cellsAffected} cells`);
+        console.log(`  Cell Cost: ${newLocation.cost.toFixed(2)} | Selection Score: ${newLocation.score.toFixed(2)} (lower is better)`);
 
-        // Update the working grid costs based on this new station
+        // Update the working grid costs based on this new station (using spatial index)
         // This ensures the next station considers the impact of this one
         if (stationNum < n - 1) { // Don't update after the last station
-            updateCostsWithNewStation(workingCells, newLocation);
+            updateCostsWithNewStation(workingCells, newLocation, spatialIndex);
             console.log(`  → Updated proximal grid with new station influence`);
         }
     }
 
+    // Final progress update
+    if (onProgress) {
+        onProgress(100);
+    }
+
     console.log(`\n=== FOUND ${optimalLocations.length} OPTIMAL LOCATIONS ===`);
-    console.log('Each station maximizes overall benefit to the proximal grid');
+    console.log('Each station placed in lowest-cost area available');
     console.table(optimalLocations.map((loc, idx) => ({
         station: loc.stationNumber,
         latitude: loc.latitude.toFixed(6),
         longitude: loc.longitude.toFixed(6),
         cell_cost: loc.cost.toFixed(2),
-        overall_benefit: loc.overallBenefit.toFixed(2),
-        cells_affected: loc.cellsAffected,
-        avg_benefit: loc.averageBenefit.toFixed(2)
+        selection_score: loc.score.toFixed(2)
     })));
 
     return optimalLocations;

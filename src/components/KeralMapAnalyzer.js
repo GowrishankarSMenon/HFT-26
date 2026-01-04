@@ -467,7 +467,7 @@ const KeralMapAnalyzer = () => {
     setShowOptimalModal(true);
   };
 
-  const handleSubmitOptimalLocations = (n) => {
+  const handleSubmitOptimalLocations = async (n, onProgress) => {
     if (!currentCellsRef.current) {
       alert('Please draw a polygon first to analyze the area.');
       return;
@@ -478,20 +478,31 @@ const KeralMapAnalyzer = () => {
       return;
     }
 
-    const locations = findOptimalLocations(currentCellsRef.current, n, 0.5);
+    try {
+      const locations = await findOptimalLocations(
+        currentCellsRef.current,
+        n,
+        0.5,
+        onProgress
+      );
 
-    if (locations.length === 0) {
-      alert('No valid locations found within the selected area.');
-      return;
+      if (locations.length === 0) {
+        alert('No valid locations found within the selected area.');
+        return;
+      }
+
+      if (optimalLocationsLayerRef.current) {
+        optimalLocationsLayerRef.current.remove();
+      }
+
+      optimalLocationsLayerRef.current = plotOptimalLocations(map, locations);
+    } catch (error) {
+      console.error('Error finding optimal locations:', error);
+      alert('An error occurred while finding optimal locations. Please try with fewer stations or a smaller area.');
     }
+  };
 
-    if (optimalLocationsLayerRef.current) {
-      optimalLocationsLayerRef.current.remove();
-    }
-
-    optimalLocationsLayerRef.current = plotOptimalLocations(map, locations);
-    setShowOptimalModal(false);
-  }; const handleToggleHeatMap = () => {
+  const handleToggleHeatMap = () => {
     const next = !showHeatMap;
     setShowHeatMap(next);
 
