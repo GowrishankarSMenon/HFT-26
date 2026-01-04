@@ -40,7 +40,7 @@ export const findNearestDistrict = (latlngs) => {
 export const calculateArea = (coords) => {
   if (!coords || coords.length < 3) return 0;
 
-  const R = 6378137; // meters
+  const R = 6378137;
   let area = 0;
 
   for (let i = 0; i < coords.length; i++) {
@@ -54,8 +54,8 @@ export const calculateArea = (coords) => {
         Math.sin(lat2 * Math.PI / 180));
   }
 
-  area = Math.abs(area * R * R / 2); // m²
-  return area / 1_000_000;           // km²
+  area = Math.abs(area * R * R / 2);
+  return area / 1_000_000;
 };
 
 /* ----------------------------------------------------
@@ -84,12 +84,10 @@ export const pointInPolygon = (point, vs) => {
    CELL–POLYGON INTERSECTION (PARTIAL OVERLAP)
 ---------------------------------------------------- */
 const cellIntersectsPolygon = (cellCorners, polygon) => {
-  // Any cell corner inside polygon
   for (const corner of cellCorners) {
     if (pointInPolygon(corner, polygon)) return true;
   }
 
-  // Any polygon vertex inside cell bbox
   const lats = cellCorners.map(p => p[0]);
   const lngs = cellCorners.map(p => p[1]);
 
@@ -111,7 +109,7 @@ const cellIntersectsPolygon = (cellCorners, polygon) => {
 };
 
 /* ----------------------------------------------------
-   GRID GENERATION (50 m² base, 2× side, cost = 0)
+   GRID GENERATION (50 m² base, +1400 buffer cells)
 ---------------------------------------------------- */
 export const generateGridCells = (polygonCoords) => {
   if (!polygonCoords || polygonCoords.length < 3) return [];
@@ -124,19 +122,6 @@ export const generateGridCells = (polygonCoords) => {
   const minLng = Math.min(...lngs);
   const maxLng = Math.max(...lngs);
 
-  // Calculate center of polygon
-  const centerLat = (minLat + maxLat) / 2;
-  const centerLng = (minLng + maxLng) / 2;
-
-  // Expand bounding box by 2x from center
-  const latRange = (maxLat - minLat);
-  const lngRange = (maxLng - minLng);
-
-  const expandedMinLat = centerLat - latRange;
-  const expandedMaxLat = centerLat + latRange;
-  const expandedMinLng = centerLng - lngRange;
-  const expandedMaxLng = centerLng + lngRange;
-
   const BASE_CELL_AREA = 50;
   const CELL_SIDE = Math.sqrt(BASE_CELL_AREA) * 2;
 
@@ -146,6 +131,17 @@ export const generateGridCells = (polygonCoords) => {
 
   const latStep = CELL_SIDE / METERS_PER_DEGREE_LAT;
   const lngStep = CELL_SIDE / METERS_PER_DEGREE_LNG;
+
+  const originalLatCells = Math.ceil((maxLat - minLat) / latStep);
+  const originalLngCells = Math.ceil((maxLng - minLng) / lngStep);
+
+  const TOTAL_BUFFER_CELLS = 1400;
+  const bufferLayers = Math.max(1, Math.round(Math.sqrt(TOTAL_BUFFER_CELLS / 4)));
+
+  const expandedMinLat = minLat - (bufferLayers * latStep);
+  const expandedMaxLat = maxLat + (bufferLayers * latStep);
+  const expandedMinLng = minLng - (bufferLayers * lngStep);
+  const expandedMaxLng = maxLng + (bufferLayers * lngStep);
 
   const cells = [];
 
@@ -159,13 +155,18 @@ export const generateGridCells = (polygonCoords) => {
         [lat, lng + lngStep]
       ];
 
-      // Generate all cells in expanded area
+      const isInOriginalBounds =
+        lat >= minLat && lat < maxLat &&
+        lng >= minLng && lng < maxLng;
+
       if (
         Number.isFinite(lat) &&
         Number.isFinite(lng) &&
         Number.isFinite(lat + latStep) &&
         Number.isFinite(lng + lngStep)
       ) {
+        const inPolygon = cellIntersectsPolygon(cellCorners, polygonCoords);
+
         cells.push({
           minLat: lat,
           minLng: lng,
@@ -174,13 +175,43 @@ export const generateGridCells = (polygonCoords) => {
           centerLat: lat + latStep / 2,
           centerLng: lng + lngStep / 2,
           cost: 0,
-          inPolygon: cellIntersectsPolygon(cellCorners, polygonCoords)
+          inPolygon: inPolygon,
+          isBuffer: !isInOriginalBounds
         });
       }
     }
   }
 
+  const bufferCells = cells.filter(c => c.isBuffer).length;
+  const polygonCells = cells.filter(c => c.inPolygon).length;
+
+  console.log(`Buffer layers added: ${bufferLayers}`);
+  console.log(`Original grid: ${originalLatCells} x ${originalLngCells} = ${originalLatCells * originalLngCells} cells`);
+  console.log(`Expanded grid: ${Math.ceil((expandedMaxLat - expandedMinLat) / latStep)} x ${Math.ceil((expandedMaxLng - expandedMinLng) / lngStep)}`);
+  console.log(`Total cells: ${cells.length} (${polygonCells} in polygon, ${bufferCells} buffer)`);
+
   return cells;
+};
+
+/* ----------------------------------------------------
+   FETCH REAL STATIONS FROM DATABASE
+---------------------------------------------------- */
+export const fetchStationsFromDB = async (bounds, type = 'charging') => {
+  try {
+    const response = await fetch('/api/stations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bounds, type })
+    });
+
+    if (!response.ok) throw new Error('Failed to fetch stations');
+
+    const { stations } = await response.json();
+    return stations.map(s => [s.Latitude, s.Longitude]);
+  } catch (error) {
+    console.error('Error fetching stations:', error);
+    return [];
+  }
 };
 
 /* ----------------------------------------------------
@@ -214,14 +245,14 @@ export const generateStats = (bounds) => {
    GRID VISUALIZATION (RECTANGLES)
 ---------------------------------------------------- */
 export const visualizeGridCells = (map, cells) => {
-  // Log grid cells matrix to console
+  const visibleCells = cells.filter(c => c.inPolygon);
+
   console.log('=== GRID CELLS MATRIX ===');
   console.log(`Total cells: ${cells.length}`);
   console.log(`Cells in polygon: ${cells.filter(c => c.inPolygon).length}`);
-  console.log(`Buffer cells: ${cells.filter(c => !c.inPolygon).length}`);
+  console.log(`Buffer cells: ${cells.filter(c => c.isBuffer).length}`);
   console.log('');
-  
-  // Log as table
+
   console.table(cells.map((cell, idx) => ({
     id: idx,
     centerLat: cell.centerLat.toFixed(6),
@@ -231,16 +262,16 @@ export const visualizeGridCells = (map, cells) => {
     maxLat: cell.maxLat.toFixed(6),
     maxLng: cell.maxLng.toFixed(6),
     cost: cell.cost,
-    inPolygon: cell.inPolygon ? 'Yes' : 'No'
+    inPolygon: cell.inPolygon ? 'Yes' : 'No',
+    isBuffer: cell.isBuffer ? 'Yes' : 'No'
   })));
-  
-  // Log raw cells array
+
   console.log('Raw cells array:', cells);
   console.log('');
 
   const gridLayer = L.layerGroup();
 
-  cells.forEach((cell, idx) => {
+  visibleCells.forEach((cell, idx) => {
     if (
       !Number.isFinite(cell.minLat) ||
       !Number.isFinite(cell.minLng) ||
@@ -254,15 +285,15 @@ export const visualizeGridCells = (map, cells) => {
         [cell.maxLat, cell.maxLng]
       ],
       {
-        color: cell.inPolygon ? '#7c3aed' : '#d1d5db',
+        color: '#7c3aed',
         weight: 1,
-        fillColor: cell.inPolygon ? '#a78bfa' : '#f3f4f6',
-        fillOpacity: cell.inPolygon ? 0.35 : 0.15
+        fillColor: '#a78bfa',
+        fillOpacity: 0.35
       }
     );
 
     rect.bindPopup(
-      `<strong>Grid Cell ${idx + 1}</strong><br/>Cost: ${cell.cost}<br/>In Polygon: ${cell.inPolygon}`
+      `<strong>Grid Cell ${idx + 1}</strong><br/>Cost: ${cell.cost}<br/>In Polygon: Yes`
     );
 
     gridLayer.addLayer(rect);
