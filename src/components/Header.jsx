@@ -9,6 +9,7 @@ import {
   Grid3x3,
   Flame,
   Users,
+  Plug,
 } from "lucide-react";
 
 const Header = ({
@@ -28,6 +29,8 @@ const Header = ({
   onToggleHeatMap,
   showDensityLayer,
   onToggleDensityLayer,
+  showSubstationsLayer,
+  onToggleSubstationsLayer,
 }) => (
   <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
     <div className="flex items-center justify-between">
@@ -104,6 +107,19 @@ const Header = ({
           >
             <Users size={16} />
             {showDensityLayer ? "Density ON" : "Density OFF"}
+          </button>
+        )}
+        {hasPolygon && (
+          <button
+            onClick={onToggleSubstationsLayer}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-medium ${
+              showSubstationsLayer
+                ? "bg-purple-600 text-white hover:bg-purple-700"
+                : "bg-white text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            <Plug size={16} />
+            {showSubstationsLayer ? "Substations ON" : "Substations OFF"}
           </button>
         )}
         {hasPolygon && (

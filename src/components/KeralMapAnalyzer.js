@@ -14,6 +14,7 @@ import {
 } from '../utils/mapUtils';
 import { generateHeatMapLayer, addHeatMapLegend } from '../utils/heatMapLayer';
 import { fetchPopulationDensityData, calculatePopulationDensityCost } from '../utils/populationDensityLayer';
+import { fetchSubstationsData, calculateSubstationsCost, plotSubstationsOnMap } from '../utils/substationsLayer';
 
 const KeralMapAnalyzer = () => {
   const mapRef = useRef(null);
@@ -30,10 +31,12 @@ const KeralMapAnalyzer = () => {
   const [showGrid, setShowGrid] = useState(false);
   const [showHeatMap, setShowHeatMap] = useState(false);
   const [showDensityLayer, setShowDensityLayer] = useState(false);
+  const [showSubstationsLayer, setShowSubstationsLayer] = useState(false);
   const gridLayerRef = useRef(null);
   const heatMapLayerRef = useRef(null);
   const heatMapLegendRef = useRef(null);
   const currentCellsRef = useRef(null);
+  const substationsLayerRef = useRef(null);
 
   useEffect(() => {
     const mapInstance = L.map(mapRef.current).setView([10.8505, 76.2711], 8);
@@ -165,6 +168,19 @@ const KeralMapAnalyzer = () => {
       cells = calculatePopulationDensityCost(cells, densityData, chargingStations);
     }
 
+    // Fetch substations data from expanded area and calculate substations cost if layer is enabled
+    if (showSubstationsLayer) {
+      const substationsData = await fetchSubstationsData(currentPath, true);
+      console.log(`Applying substations cost based on ${substationsData.length} substations (including surroundings)`);
+      cells = calculateSubstationsCost(cells, substationsData);
+
+      // Plot substations on map
+      if (substationsLayerRef.current) {
+        substationsLayerRef.current.remove();
+      }
+      substationsLayerRef.current = plotSubstationsOnMap(map, substationsData);
+    }
+
     // Store cells for heat map toggle
     currentCellsRef.current = cells;
 
@@ -201,12 +217,14 @@ const KeralMapAnalyzer = () => {
       if (gridLayerRef.current) { gridLayerRef.current.remove(); gridLayerRef.current = null; }
       if (heatMapLayerRef.current) { heatMapLayerRef.current.remove(); heatMapLayerRef.current = null; }
       if (heatMapLegendRef.current) { heatMapLegendRef.current.remove(); heatMapLegendRef.current = null; }
+      if (substationsLayerRef.current) { substationsLayerRef.current.remove(); substationsLayerRef.current = null; }
       currentCellsRef.current = null;
       setShowPetrol(false);
       setShowCharging(false);
       setShowGrid(false);
       setShowHeatMap(false);
       setShowDensityLayer(false);
+      setShowSubstationsLayer(false);
     }
   };
 
@@ -298,6 +316,65 @@ const KeralMapAnalyzer = () => {
     }
   };
 
+  const handleToggleSubstationsLayer = async () => {
+    const next = !showSubstationsLayer;
+    setShowSubstationsLayer(next);
+
+    if (!currentPath || currentPath.length < 3) {
+      alert('Please draw and finish a polygon first');
+      setShowSubstationsLayer(false);
+      return;
+    }
+
+    // Recalculate costs with or without substations layer
+    let cells = generateGridCells(currentPath);
+
+    // Always apply charging station proximity
+    const chargingStations = await fetchStationsFromDB(currentPath, 'charging', true);
+    cells = calculateChargingStationProximityCost(cells, chargingStations);
+
+    // Apply density cost if it's enabled
+    if (showDensityLayer) {
+      const densityData = await fetchPopulationDensityData(currentPath, true);
+      cells = calculatePopulationDensityCost(cells, densityData, chargingStations);
+    }
+
+    // Apply substations cost if toggled on (fetch from expanded area including surroundings)
+    if (next) {
+      const substationsData = await fetchSubstationsData(currentPath, true);
+      console.log(`Toggling ON substations layer with ${substationsData.length} substations (including surroundings)`);
+      cells = calculateSubstationsCost(cells, substationsData);
+
+      // Plot substations on map
+      if (substationsLayerRef.current) {
+        substationsLayerRef.current.remove();
+      }
+      substationsLayerRef.current = plotSubstationsOnMap(map, substationsData);
+    } else {
+      console.log('Toggling OFF substations layer');
+      // Remove substations markers from map
+      if (substationsLayerRef.current) {
+        substationsLayerRef.current.remove();
+        substationsLayerRef.current = null;
+      }
+    }
+
+    // Update stored cells
+    currentCellsRef.current = cells;
+
+    // Update heat map if it's currently showing
+    if (showHeatMap && heatMapLayerRef.current) {
+      heatMapLayerRef.current.remove();
+      heatMapLayerRef.current = generateHeatMapLayer(map, cells);
+    }
+
+    // Update grid if it's currently showing
+    if (showGrid && gridLayerRef.current) {
+      gridLayerRef.current.remove();
+      gridLayerRef.current = visualizeGridCells(map, cells);
+    }
+  };
+
   const handleToggleHeatMap = () => {
     const next = !showHeatMap;
     setShowHeatMap(next);
@@ -358,6 +435,8 @@ const KeralMapAnalyzer = () => {
         onToggleHeatMap={handleToggleHeatMap}
         showDensityLayer={showDensityLayer}
         onToggleDensityLayer={handleToggleDensityLayer}
+        showSubstationsLayer={showSubstationsLayer}
+        onToggleSubstationsLayer={handleToggleSubstationsLayer}
       />
 
       <div className="flex-1 flex overflow-hidden">
