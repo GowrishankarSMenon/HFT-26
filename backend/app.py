@@ -48,23 +48,6 @@ class OptimalLocationFinder:
         self.densities = np.array([c.get('density', 0)
                                   for c in self.polygon_cells])
 
-        # Calculate polygon center (centroid)
-        self.polygon_center_lat = np.mean(self.coords[:, 0])
-        self.polygon_center_lng = np.mean(self.coords[:, 1])
-        print(
-            f"✓ Polygon center: ({self.polygon_center_lat:.6f}, {self.polygon_center_lng:.6f})")
-
-        # Calculate max distance from center to any polygon cell (for normalization)
-        distances_to_center = np.array([
-            self.haversine_distance(
-                c['centerLat'], c['centerLng'],
-                self.polygon_center_lat, self.polygon_center_lng
-            ) for c in self.polygon_cells
-        ])
-        self.max_distance_from_center = np.max(distances_to_center)
-        print(
-            f"✓ Max distance from center: {self.max_distance_from_center:.1f}m")
-
         # Build KDTree for fast spatial queries
         self.kdtree = KDTree(self.coords)
 
@@ -113,14 +96,16 @@ class OptimalLocationFinder:
         Higher score = better placement (more cost increase = better coverage)
 
         This simulates placing a station and calculates how much it would
-        increase the total grid cost, just like existing EV stations do.
+        increase the total grid cost, accounting for CURRENT cost levels.
+
+        Areas with LOW current cost will get MORE benefit from a new station.
         """
         candidate = self.polygon_cells[candidate_idx]
 
         # Simulate placing station here and calculate cost increase
         # Use new_station_radius (50% larger) for new charging stations
         radius_degrees = self.meters_to_degrees(self.new_station_radius)
-        MAX_COST_INCREASE = 100
+        MAX_COST_INCREASE = 50
 
         total_cost_increase = 0.0
 
@@ -138,20 +123,18 @@ class OptimalLocationFinder:
             )
 
             if dist <= self.new_station_radius:
-                # Cost increase decreases with distance (linear decay)
-                cost_increase = MAX_COST_INCREASE * \
-                    (1 - dist / self.new_station_radius)
-                total_cost_increase += cost_increase
+                # Calculate how much cost this station would ADD to this cell
+                distance_ratio = dist / self.new_station_radius
+                cost_increase = MAX_COST_INCREASE * (1 - distance_ratio)
 
-        # Add bonus for polygon center proximity (prefer central locations)
-        distance_to_center = self.haversine_distance(
-            candidate['centerLat'], candidate['centerLng'],
-            self.polygon_center_lat, self.polygon_center_lng
-        )
-        center_proximity_ratio = 1.0 - \
-            (distance_to_center / self.max_distance_from_center)
-        CENTER_BONUS = center_proximity_ratio * 100  # Bonus up to 100 points
-        total_cost_increase += CENTER_BONUS
+                # Weight by how underserved this area is (lower current cost = higher weight)
+                # Areas already well-served (high cost) contribute less to total benefit
+                underserved_weight = 1.0 - \
+                    min(current_costs[idx] / 200, 1.0)  # Cap at 200
+                weighted_increase = cost_increase * \
+                    (0.5 + 0.5 * underserved_weight)
+
+                total_cost_increase += weighted_increase
 
         return total_cost_increase
 
@@ -250,13 +233,6 @@ class OptimalLocationFinder:
             print(
                 f"  Current Cost: {location['cost']:.2f} | Cost Increase: {location['score']:.2f}")
 
-            # Calculate distance to center for reference
-            dist_to_center = self.haversine_distance(
-                location['latitude'], location['longitude'],
-                self.polygon_center_lat, self.polygon_center_lng
-            )
-            print(f"  Distance to polygon center: {dist_to_center:.1f}m")
-
             # UPDATE COST MAP for next iteration
             # This is CRITICAL: new station INCREASES costs around it
             # This represents improved coverage/service in that area
@@ -284,7 +260,7 @@ class OptimalLocationFinder:
         Uses new_station_radius (50% larger than DB stations).
         """
         radius_degrees = self.meters_to_degrees(self.new_station_radius)
-        MAX_COST_INCREASE = 100
+        MAX_COST_INCREASE = 50
 
         # Make a copy to avoid modifying reference
         updated_costs = current_costs.copy()
@@ -307,6 +283,8 @@ class OptimalLocationFinder:
                 cost_increase = MAX_COST_INCREASE * \
                     (1 - dist / self.new_station_radius)
                 updated_costs[idx] += cost_increase
+                # Cap costs at -100 to 100
+                updated_costs[idx] = max(-100, min(100, updated_costs[idx]))
 
         return updated_costs
 
