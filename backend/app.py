@@ -34,8 +34,9 @@ class OptimalLocationFinder:
         self.polygon_cells = [c for c in cells if c.get('inPolygon', False)]
         self.original_cells = cells
         self.n_stations = n_stations
-        self.min_distance_m = min_distance_km * 1000
-        self.influence_radius = 5000  # 5km
+        self.min_distance_m = min_distance_km * 3000
+        self.influence_radius = 5000  # 5km for existing DB stations
+        self.new_station_radius = 7500  # 7.5km for new stations (50% more)
 
         if not self.polygon_cells:
             raise ValueError("No cells found inside polygon")
@@ -108,44 +109,70 @@ class OptimalLocationFinder:
 
     def calculate_score(self, candidate_idx, current_costs):
         """
-        Calculate the placement SCORE (lower is better)
-        Places stations in LOW-cost areas to maximize total grid cost increase
+        Calculate the TOTAL GRID COST INCREASE if we place a station here
+        Higher score = better placement (more cost increase = better coverage)
 
-        Since placing stations INCREASES cost around them,
-        we want to place in currently low-cost (underserved) areas
+        This simulates placing a station and calculates how much it would
+        increase the total grid cost, just like existing EV stations do.
         """
         candidate = self.polygon_cells[candidate_idx]
 
-        # Base score is current cost (lower = better placement)
-        score = current_costs[candidate_idx]
+        # Simulate placing station here and calculate cost increase
+        # Use new_station_radius (50% larger) for new charging stations
+        radius_degrees = self.meters_to_degrees(self.new_station_radius)
+        MAX_COST_INCREASE = 100
 
-        # Add penalty for distance from polygon center (prefer central locations)
+        total_cost_increase = 0.0
+
+        # Find nearby cells using KDTree
+        nearby_indices = self.kdtree.query_ball_point(
+            [candidate['centerLat'], candidate['centerLng']],
+            radius_degrees
+        )
+
+        for idx in nearby_indices:
+            cell = self.polygon_cells[idx]
+            dist = self.haversine_distance(
+                cell['centerLat'], cell['centerLng'],
+                candidate['centerLat'], candidate['centerLng']
+            )
+
+            if dist <= self.new_station_radius:
+                # Cost increase decreases with distance (linear decay)
+                cost_increase = MAX_COST_INCREASE * \
+                    (1 - dist / self.new_station_radius)
+                total_cost_increase += cost_increase
+
+        # Add bonus for polygon center proximity (prefer central locations)
         distance_to_center = self.haversine_distance(
             candidate['centerLat'], candidate['centerLng'],
             self.polygon_center_lat, self.polygon_center_lng
         )
-        center_proximity_ratio = distance_to_center / self.max_distance_from_center
-        CENTER_PENALTY = center_proximity_ratio * 50  # Penalty up to 50 points
-        score += CENTER_PENALTY
+        center_proximity_ratio = 1.0 - \
+            (distance_to_center / self.max_distance_from_center)
+        CENTER_BONUS = center_proximity_ratio * 100  # Bonus up to 100 points
+        total_cost_increase += CENTER_BONUS
 
-        return score
+        return total_cost_increase
 
     def find_optimal_locations(self):
         """
-        Iteratively find n optimal locations using COST MINIMIZATION
+        Iteratively find n optimal locations using COST MAXIMIZATION
         with COST MAP UPDATES after each placement
 
         Algorithm:
-        1. For each candidate, calculate placement SCORE (lower = better)
-        2. Choose location with MINIMUM score (lowest current cost)
-        3. Place station there, which INCREASES cost around it
-        4. Update cost map to reflect new station's influence
-        5. Repeat for next station
+        1. For each candidate, SIMULATE placing a station there
+        2. Calculate total grid cost INCREASE it would provide
+        3. Choose location with MAXIMUM cost increase
+        4. Actually place station there
+        5. Update cost map to reflect new station's influence
+        6. Repeat for next station (which now considers previous placements)
 
-        This maximizes TOTAL grid cost by placing stations in underserved areas
+        This maximizes TOTAL grid cost by iteratively placing stations
+        where they provide maximum coverage improvement.
         """
         print(f"\n=== FINDING {self.n_stations} OPTIMAL LOCATIONS ===")
-        print("Using iterative cost-minimization to maximize total grid cost\n")
+        print("Using iterative cost-maximization with simulated placement effects\n")
 
         optimal_locations = []
         # Keep track of current costs (gets updated after each placement)
@@ -158,7 +185,8 @@ class OptimalLocationFinder:
             print(f"\n--- Station {station_num + 1}/{self.n_stations} ---")
 
             best_idx = None
-            best_score = float('inf')  # Lower score = better
+            # Higher score = better (more cost increase)
+            best_score = -float('inf')
 
             # Sample candidates for performance (limit to 500 evaluations)
             n_candidates = min(500, len(self.polygon_cells))
@@ -191,10 +219,11 @@ class OptimalLocationFinder:
                 if too_close:
                     continue
 
-                # Calculate SCORE of placing station here (lower = better)
+                # Calculate cost increase if we place station here
+                # This simulates the station's effect on grid cost
                 score = self.calculate_score(idx, current_costs)
 
-                if score < best_score:  # Minimize score
+                if score > best_score:  # Maximize cost increase
                     best_score = score
                     best_idx = idx
 
@@ -219,7 +248,7 @@ class OptimalLocationFinder:
             print(
                 f"✓ Placed at ({location['latitude']:.6f}, {location['longitude']:.6f})")
             print(
-                f"  Current Cost: {location['cost']:.2f} | Score: {location['score']:.2f}")
+                f"  Current Cost: {location['cost']:.2f} | Cost Increase: {location['score']:.2f}")
 
             # Calculate distance to center for reference
             dist_to_center = self.haversine_distance(
@@ -252,8 +281,9 @@ class OptimalLocationFinder:
 
         Each new station INCREASES the cost of nearby cells, representing
         improved coverage/service. Higher cost = better served area.
+        Uses new_station_radius (50% larger than DB stations).
         """
-        radius_degrees = self.meters_to_degrees(self.influence_radius)
+        radius_degrees = self.meters_to_degrees(self.new_station_radius)
         MAX_COST_INCREASE = 100
 
         # Make a copy to avoid modifying reference
@@ -272,10 +302,10 @@ class OptimalLocationFinder:
                 new_station['latitude'], new_station['longitude']
             )
 
-            if dist <= self.influence_radius:
+            if dist <= self.new_station_radius:
                 # Cost increases with proximity to new station
                 cost_increase = MAX_COST_INCREASE * \
-                    (1 - dist / self.influence_radius)
+                    (1 - dist / self.new_station_radius)
                 updated_costs[idx] += cost_increase
 
         return updated_costs
@@ -286,7 +316,10 @@ def find_optimal_locations():
     """
     API endpoint to find optimal EV charging station locations
 
-    Uses iterative cost-minimization to maximize total grid cost
+    Uses iterative cost-maximization by simulating each station's effect.
+    Each candidate is evaluated by calculating how much total grid cost
+    it would add (like existing EV stations). Stations are placed iteratively,
+    with each placement affecting the cost map for subsequent decisions.
 
     Request body:
     {
