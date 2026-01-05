@@ -1,7 +1,6 @@
 """
 Flask API for finding optimal EV charging station locations
 Uses spatial indexing and numpy for fast computation
-with ITERATIVE BENEFIT MAXIMIZATION and COST MAP UPDATES
 """
 
 from flask import Flask, request, jsonify
@@ -17,8 +16,7 @@ CORS(app)  # Enable CORS for Next.js frontend
 
 class OptimalLocationFinder:
     """
-    Find optimal EV charging station locations using ITERATIVE BENEFIT MAXIMIZATION
-    with dynamic COST MAP UPDATES after each placement
+    Find optimal EV charging station locations using cost-based analysis
     """
 
     def __init__(self, cells, n_stations=3, min_distance_km=0.5):
@@ -106,59 +104,77 @@ class OptimalLocationFinder:
         """Convert meters to approximate degrees (at equator)"""
         return meters / 111320
 
-    def calculate_score(self, candidate_idx, current_costs):
+    def calculate_score(self, candidate_idx, placed_stations):
         """
-        Calculate the placement SCORE (lower is better)
-        Places stations in LOW-cost areas to maximize total grid cost increase
+        Calculate suitability score for a candidate location
+        Lower score = better location
 
-        Since placing stations INCREASES cost around them,
-        we want to place in currently low-cost (underserved) areas
+        Score = Base Cost + Proximity Penalty - Density Bonus - Center Bonus
+
+        Center bonus is secondary - it only affects selection when costs are similar
         """
         candidate = self.polygon_cells[candidate_idx]
+        # Base cost (lower is better) - PRIMARY CRITERION
+        score = candidate['cost']
 
-        # Base score is current cost (lower = better placement)
-        score = current_costs[candidate_idx]
+        # Penalty for proximity to already placed stations
+        for station in placed_stations:
+            dist = self.haversine_distance(
+                candidate['centerLat'], candidate['centerLng'],
+                station['latitude'], station['longitude']
+            )
+            if dist < self.influence_radius:
+                # Closer = higher penalty
+                penalty = (1 - dist / self.influence_radius) * 1000
+                score += penalty
 
-        # Add penalty for distance from polygon center (prefer central locations)
+        # Reward for high density coverage using KDTree
+        radius_degrees = self.meters_to_degrees(self.influence_radius)
+        nearby_indices = self.kdtree.query_ball_point(
+            [candidate['centerLat'], candidate['centerLng']],
+            radius_degrees
+        )
+
+        total_density = self.densities[nearby_indices].sum()
+        if total_density > 0:
+            # Higher density = lower score (better)
+            density_bonus = np.log(total_density + 1) * 10
+            score -= density_bonus
+
+        # SECONDARY CRITERION: Bonus for proximity to polygon center
+        # Only affects selection when costs are similar (small multiplier)
         distance_to_center = self.haversine_distance(
             candidate['centerLat'], candidate['centerLng'],
             self.polygon_center_lat, self.polygon_center_lng
         )
-        center_proximity_ratio = distance_to_center / self.max_distance_from_center
-        CENTER_PENALTY = center_proximity_ratio * 50  # Penalty up to 50 points
-        score += CENTER_PENALTY
 
-        return score
+        # Normalize distance: 1.0 at center, 0.0 at max distance
+        center_proximity_ratio = 1.0 - \
+            (distance_to_center / self.max_distance_from_center)
+
+        # Center bonus is small compared to cost (5% weight)
+        # This ensures cost remains primary, but center is secondary
+        CENTER_BONUS_MULTIPLIER = 5  # Small value to keep cost dominant
+        center_bonus = center_proximity_ratio * CENTER_BONUS_MULTIPLIER
+        score -= center_bonus  # Subtract to make it a bonus (lower score)
+
+        return score, total_density
 
     def find_optimal_locations(self):
         """
-        Iteratively find n optimal locations using COST MINIMIZATION
-        with COST MAP UPDATES after each placement
-
-        Algorithm:
-        1. For each candidate, calculate placement SCORE (lower = better)
-        2. Choose location with MINIMUM score (lowest current cost)
-        3. Place station there, which INCREASES cost around it
-        4. Update cost map to reflect new station's influence
-        5. Repeat for next station
-
-        This maximizes TOTAL grid cost by placing stations in underserved areas
+        Iteratively find n optimal locations
+        Returns list of optimal station locations with metadata
         """
         print(f"\n=== FINDING {self.n_stations} OPTIMAL LOCATIONS ===")
-        print("Using iterative cost-minimization to maximize total grid cost\n")
 
         optimal_locations = []
-        # Keep track of current costs (gets updated after each placement)
-        current_costs = self.costs.copy()
-
-        initial_total_cost = current_costs.sum()
-        print(f"Initial total grid cost: {initial_total_cost:.2f}\n")
 
         for station_num in range(self.n_stations):
             print(f"\n--- Station {station_num + 1}/{self.n_stations} ---")
 
             best_idx = None
-            best_score = float('inf')  # Lower score = better
+            best_score = float('inf')
+            best_density = 0
 
             # Sample candidates for performance (limit to 500 evaluations)
             n_candidates = min(500, len(self.polygon_cells))
@@ -172,7 +188,6 @@ class OptimalLocationFinder:
                 candidate_indices = np.arange(len(self.polygon_cells))
 
             print(f"Evaluating {len(candidate_indices)} candidates...")
-            print(f"Current total grid cost: {current_costs.sum():.2f}")
 
             for idx in candidate_indices:
                 candidate = self.polygon_cells[idx]
@@ -191,12 +206,13 @@ class OptimalLocationFinder:
                 if too_close:
                     continue
 
-                # Calculate SCORE of placing station here (lower = better)
-                score = self.calculate_score(idx, current_costs)
+                # Calculate score
+                score, density = self.calculate_score(idx, optimal_locations)
 
-                if score < best_score:  # Minimize score
+                if score < best_score:
                     best_score = score
                     best_idx = idx
+                    best_density = density
 
             if best_idx is None:
                 print(f"⚠ Could not place station {station_num + 1}")
@@ -208,9 +224,9 @@ class OptimalLocationFinder:
                 'stationNumber': station_num + 1,
                 'latitude': float(cell['centerLat']),
                 'longitude': float(cell['centerLng']),
-                'cost': float(current_costs[best_idx]),
+                'cost': float(cell['cost']),
                 'score': float(best_score),
-                'density': float(self.densities[best_idx]),
+                'density': float(best_density),
                 'nearestStationDistance': float(cell.get('nearestStationDistance', 0)),
                 'adoptionLikelihood': float(cell.get('adoptionLikelihood', 0))
             }
@@ -219,7 +235,7 @@ class OptimalLocationFinder:
             print(
                 f"✓ Placed at ({location['latitude']:.6f}, {location['longitude']:.6f})")
             print(
-                f"  Current Cost: {location['cost']:.2f} | Score: {location['score']:.2f}")
+                f"  Cost: {location['cost']:.2f} | Score: {location['score']:.2f} | Density: {location['density']:.2e}")
 
             # Calculate distance to center for reference
             dist_to_center = self.haversine_distance(
@@ -229,35 +245,18 @@ class OptimalLocationFinder:
             print(f"  Distance to polygon center: {dist_to_center:.1f}m")
 
             # UPDATE COST MAP for next iteration
-            # This is CRITICAL: new station INCREASES costs around it
-            # This represents improved coverage/service in that area
+            # This is critical: new station increases costs around it
             if station_num < self.n_stations - 1:
-                current_costs = self._update_costs_and_return(
-                    location, current_costs)
-                cost_increase = current_costs.sum() - initial_total_cost
-                print(
-                    f"  Updated cost map | New total: {current_costs.sum():.2f} (↑{cost_increase:.2f})")
+                # Use updated cost tracking instead
+                pass
 
         print(f"\n✓ FOUND {len(optimal_locations)} OPTIMAL LOCATIONS")
-        final_cost = current_costs.sum()
-        total_increase = final_cost - initial_total_cost
-        print(
-            f"Total cost increase: {total_increase:.2f} ({(total_increase/initial_total_cost)*100:.1f}%)")
-        print(f"Maximized grid coverage by placing stations in underserved areas")
         return optimal_locations
 
     def _update_costs_and_return(self, new_station, current_costs):
-        """
-        Update grid costs based on newly placed station and return updated array
-
-        Each new station INCREASES the cost of nearby cells, representing
-        improved coverage/service. Higher cost = better served area.
-        """
+        """Update grid costs based on newly placed station"""
         radius_degrees = self.meters_to_degrees(self.influence_radius)
         MAX_COST_INCREASE = 100
-
-        # Make a copy to avoid modifying reference
-        updated_costs = current_costs.copy()
 
         # Find nearby cells using KDTree
         nearby_indices = self.kdtree.query_ball_point(
@@ -273,20 +272,16 @@ class OptimalLocationFinder:
             )
 
             if dist <= self.influence_radius:
-                # Cost increases with proximity to new station
                 cost_increase = MAX_COST_INCREASE * \
                     (1 - dist / self.influence_radius)
-                updated_costs[idx] += cost_increase
-
-        return updated_costs
+                cell['cost'] += cost_increase
+                self.costs[idx] = cell['cost']
 
 
 @app.route('/api/find-optimal-locations', methods=['POST'])
 def find_optimal_locations():
     """
     API endpoint to find optimal EV charging station locations
-
-    Uses iterative cost-minimization to maximize total grid cost
 
     Request body:
     {
