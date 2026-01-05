@@ -127,14 +127,16 @@ class OptimalLocationFinder:
                 distance_ratio = dist / self.new_station_radius
                 cost_increase = MAX_COST_INCREASE * (1 - distance_ratio)
 
-                # Weight by how underserved this area is (lower current cost = higher weight)
-                # Areas already well-served (high cost) contribute less to total benefit
-                underserved_weight = 1.0 - \
-                    min(current_costs[idx] / 200, 1.0)  # Cap at 200
-                weighted_increase = cost_increase * \
-                    (0.5 + 0.5 * underserved_weight)
+                # Simulate what the new cost would be AFTER capping
+                current_cost = current_costs[idx]
+                new_cost_uncapped = current_cost + cost_increase
+                new_cost_capped = max(-100, min(100, new_cost_uncapped))
 
-                total_cost_increase += weighted_increase
+                # The ACTUAL increase is the difference after capping
+                # This naturally favors low-cost areas (more room to increase)
+                actual_increase = new_cost_capped - current_cost
+
+                total_cost_increase += actual_increase
 
         return total_cost_increase
 
