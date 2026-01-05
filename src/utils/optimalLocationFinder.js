@@ -24,12 +24,16 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
 
 /**
  * Create spatial grid index for faster nearest neighbor searches
+ * ONLY indexes cells INSIDE the polygon (excludes buffer cells)
  */
 const createSpatialIndex = (cells) => {
     const GRID_SIZE = 0.01; // ~1km grid cells
     const index = new Map();
 
-    cells.forEach(cell => {
+    // ONLY index cells that are inside the polygon (no buffer cells)
+    const cellsInPolygon = cells.filter(c => c.inPolygon);
+
+    cellsInPolygon.forEach(cell => {
         const gridX = Math.floor(cell.centerLat / GRID_SIZE);
         const gridY = Math.floor(cell.centerLng / GRID_SIZE);
         const key = `${gridX},${gridY}`;
@@ -45,6 +49,7 @@ const createSpatialIndex = (cells) => {
 
 /**
  * Get cells within radius using spatial index
+ * ONLY returns cells inside polygon (no buffer cells)
  */
 const getCellsInRadius = (centerCell, radiusMeters, spatialIndex) => {
     const { index, GRID_SIZE } = spatialIndex;
@@ -61,7 +66,8 @@ const getCellsInRadius = (centerCell, radiusMeters, spatialIndex) => {
             const key = `${centerGridX + dx},${centerGridY + dy}`;
             const cells = index.get(key);
             if (cells) {
-                nearbyCells.push(...cells);
+                // Double-check cells are in polygon (should already be filtered, but safety check)
+                nearbyCells.push(...cells.filter(c => c.inPolygon));
             }
         }
     }
@@ -71,7 +77,7 @@ const getCellsInRadius = (centerCell, radiusMeters, spatialIndex) => {
 
 /**
  * Calculate the suitability score for placing a station at a specific location
- * OPTIMIZED VERSION with spatial indexing
+ * OPTIMIZED VERSION - considers ONLY cells inside polygon
  * Lower score = better location (we minimize cost)
  */
 const calculateLocationScore = (candidate, workingCells, alreadyPlacedStations, spatialIndex) => {
@@ -97,23 +103,38 @@ const calculateLocationScore = (candidate, workingCells, alreadyPlacedStations, 
         }
     }
 
+    // REWARD: Consider population density coverage within polygon
+    // Get nearby cells INSIDE polygon only using spatial index
+    const nearbyCells = getCellsInRadius(candidate, INFLUENCE_RADIUS, spatialIndex);
+    const totalDensity = nearbyCells.reduce((sum, cell) => sum + (cell.density || 0), 0);
+
+    // Higher density coverage = lower score (better location)
+    // Use logarithmic scaling to avoid over-weighting density
+    if (totalDensity > 0) {
+        const densityBonus = Math.log(totalDensity + 1) * 10;
+        score -= densityBonus; // Subtract to make it better (lower score)
+    }
+
     return score;
 };
 
 /**
  * Update costs in the proximal grid based on a newly placed charging station
- * OPTIMIZED VERSION with spatial indexing
+ * OPTIMIZED VERSION - only updates cells INSIDE polygon
  */
 const updateCostsWithNewStation = (workingCells, newStation, spatialIndex) => {
     const INFLUENCE_RADIUS = 5000; // 5km influence radius for new station
     const MAX_COST_REDUCTION = 100; // Maximum cost reduction near the station
 
-    // Use spatial index to only update nearby cells (OPTIMIZED)
+    // Use spatial index to only update nearby cells INSIDE POLYGON
     const nearbyCells = spatialIndex ?
         getCellsInRadius(newStation, INFLUENCE_RADIUS, spatialIndex) :
-        workingCells;
+        workingCells.filter(c => c.inPolygon);
 
     nearbyCells.forEach(cell => {
+        // Skip if not in polygon (safety check)
+        if (!cell.inPolygon) return;
+
         const distance = calculateDistance(
             cell.centerLat,
             cell.centerLng,
@@ -150,8 +171,9 @@ const updateCostsWithNewStation = (workingCells, newStation, spatialIndex) => {
  * @returns {Promise<Array>} Array of optimal locations with coordinates and cost info
  */
 export const findOptimalLocations = async (cells, n, minDistanceKm = 0.5, onProgress) => {
-    // Filter to only cells inside the polygon
+    // Filter to ONLY cells inside the polygon (exclude buffer cells)
     const cellsInPolygon = cells.filter(c => c.inPolygon);
+    const bufferCells = cells.filter(c => !c.inPolygon);
 
     if (cellsInPolygon.length === 0) {
         console.warn('No cells in polygon for optimal location search');
@@ -160,17 +182,20 @@ export const findOptimalLocations = async (cells, n, minDistanceKm = 0.5, onProg
 
     console.log('\n=== FINDING OPTIMAL CHARGING STATION LOCATIONS ===');
     console.log(`Total cells in polygon: ${cellsInPolygon.length}`);
+    console.log(`Buffer cells (excluded from placement): ${bufferCells.length}`);
     console.log(`Requested stations: ${n}`);
     console.log(`Minimum distance between stations: ${minDistanceKm} km`);
     console.log('NOTE: Using optimized spatial indexing for faster computation');
     console.log('NOTE: Selecting locations with LOWEST cost (most favorable)');
+    console.log('NOTE: Adding density bonus to prefer high-population areas');
     console.log('NOTE: Each placement updates costs for next iteration');
-    console.log('NOTE: All stations will be placed ONLY within the user-defined polygon\n');
+    console.log('NOTE: All stations will be placed ONLY within the user-defined polygon');
+    console.log('NOTE: Buffer cells are COMPLETELY EXCLUDED from consideration\n');
 
-    // Create spatial index for faster lookups
-    console.log('Building spatial index...');
+    // Create spatial index for faster lookups (POLYGON CELLS ONLY)
+    console.log('Building spatial index (polygon cells only)...');
     const spatialIndex = createSpatialIndex(cellsInPolygon);
-    console.log('✓ Spatial index created\n');
+    console.log(`✓ Spatial index created with ${cellsInPolygon.length} polygon cells\n`);
 
     // Create a deep copy of cells for working calculations
     const workingCells = cellsInPolygon.map(cell => ({
@@ -178,7 +203,8 @@ export const findOptimalLocations = async (cells, n, minDistanceKm = 0.5, onProg
         cost: cell.cost, // Copy current cost
         nearestStationDistance: cell.nearestStationDistance || Infinity,
         density: cell.density || 0,
-        adoptionLikelihood: cell.adoptionLikelihood || 0
+        adoptionLikelihood: cell.adoptionLikelihood || 0,
+        inPolygon: true // Ensure flag is set
     }));
 
     const optimalLocations = [];
@@ -199,20 +225,26 @@ export const findOptimalLocations = async (cells, n, minDistanceKm = 0.5, onProg
 
         let bestCandidate = null;
         let bestScore = Infinity; // Lower score is better
-        let bestCandidateCost = null;
 
         console.log(`\n--- Evaluating candidates for Station ${stationNum + 1} ---`);
 
         // Sample candidates for large datasets (limit evaluation for performance)
         const MAX_CANDIDATES_TO_EVALUATE = 500;
         const candidateStep = Math.max(1, Math.floor(workingCells.length / MAX_CANDIDATES_TO_EVALUATE));
-        const candidates = workingCells.filter((_, idx) => idx % candidateStep === 0);
 
-        console.log(`Evaluating ${candidates.length} candidate locations (sampled from ${workingCells.length} cells)`);
+        // IMPORTANT: Only evaluate cells inside polygon
+        const candidates = workingCells
+            .filter(c => c.inPolygon)
+            .filter((_, idx) => idx % candidateStep === 0);
+
+        console.log(`Evaluating ${candidates.length} candidate locations (sampled from ${workingCells.length} polygon cells)`);
 
         // Evaluate candidates and find the one with minimum score (lowest cost)
         for (let i = 0; i < candidates.length; i++) {
             const candidate = candidates[i];
+
+            // Double-check candidate is in polygon
+            if (!candidate.inPolygon) continue;
 
             // Check if candidate is far enough from already selected locations
             let tooClose = false;
@@ -239,12 +271,17 @@ export const findOptimalLocations = async (cells, n, minDistanceKm = 0.5, onProg
             if (score < bestScore) {
                 bestScore = score;
                 bestCandidate = candidate;
-                bestCandidateCost = candidate.cost;
             }
         }
 
         if (!bestCandidate) {
             console.warn(`Could not find valid location for station ${stationNum + 1} (only placed ${optimalLocations.length})`);
+            break;
+        }
+
+        // Verify candidate is in polygon
+        if (!bestCandidate.inPolygon) {
+            console.error(`ERROR: Selected candidate is outside polygon! Skipping.`);
             break;
         }
 
@@ -257,19 +294,21 @@ export const findOptimalLocations = async (cells, n, minDistanceKm = 0.5, onProg
             nearestStationDistance: bestCandidate.nearestStationDistance === Infinity ? 0 : bestCandidate.nearestStationDistance,
             density: bestCandidate.density,
             adoptionLikelihood: bestCandidate.adoptionLikelihood,
-            stationNumber: stationNum + 1
+            stationNumber: stationNum + 1,
+            inPolygon: true
         };
 
         optimalLocations.push(newLocation);
 
         console.log(`✓ Station ${stationNum + 1}: Placed at (${newLocation.latitude.toFixed(6)}, ${newLocation.longitude.toFixed(6)})`);
         console.log(`  Cell Cost: ${newLocation.cost.toFixed(2)} | Selection Score: ${newLocation.score.toFixed(2)} (lower is better)`);
+        console.log(`  Density: ${newLocation.density.toExponential(2)} | Location: INSIDE POLYGON`);
 
         // Update the working grid costs based on this new station (using spatial index)
         // This ensures the next station considers the impact of this one
         if (stationNum < n - 1) { // Don't update after the last station
             updateCostsWithNewStation(workingCells, newLocation, spatialIndex);
-            console.log(`  → Updated proximal grid with new station influence`);
+            console.log(`  → Updated proximal grid with new station influence (polygon cells only)`);
         }
     }
 
@@ -279,13 +318,15 @@ export const findOptimalLocations = async (cells, n, minDistanceKm = 0.5, onProg
     }
 
     console.log(`\n=== FOUND ${optimalLocations.length} OPTIMAL LOCATIONS ===`);
-    console.log('Each station placed in lowest-cost area available');
+    console.log('All stations placed INSIDE polygon (buffer cells excluded)');
+    console.log('Locations optimized for lowest cost + highest density coverage');
     console.table(optimalLocations.map((loc, idx) => ({
         station: loc.stationNumber,
         latitude: loc.latitude.toFixed(6),
         longitude: loc.longitude.toFixed(6),
         cell_cost: loc.cost.toFixed(2),
-        selection_score: loc.score.toFixed(2)
+        selection_score: loc.score.toFixed(2),
+        density: loc.density.toExponential(2)
     })));
 
     return optimalLocations;

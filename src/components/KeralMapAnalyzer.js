@@ -17,7 +17,8 @@ import { generateHeatMapLayer, addHeatMapLegend } from '../utils/heatMapLayer';
 import { fetchPopulationDensityData, calculatePopulationDensityCost } from '../utils/populationDensityLayer';
 import { fetchSubstationsData, calculateSubstationsCost, plotSubstationsOnMap } from '../utils/substationsLayer';
 import { fetchAdoptionLikelihoodData, calculateAdoptionLikelihoodCost, plotAdoptionCentersOnMap } from '../utils/adoptionLikelihoodLayer';
-import { findOptimalLocations, plotOptimalLocations } from '../utils/optimalLocationFinder';
+import { plotOptimalLocations } from '../utils/optimalLocationFinder';
+import { findOptimalLocationsAPI, checkBackendHealth } from '../utils/optimalLocationFinderAPI';
 
 const KeralMapAnalyzer = () => {
   const mapRef = useRef(null);
@@ -479,7 +480,14 @@ const KeralMapAnalyzer = () => {
     }
 
     try {
-      const locations = await findOptimalLocations(
+      // Check if backend is running
+      const backendHealthy = await checkBackendHealth();
+      if (!backendHealthy) {
+        throw new Error('Python backend is not running');
+      }
+
+      // Call Python backend API for optimal location finding
+      const locations = await findOptimalLocationsAPI(
         currentCellsRef.current,
         n,
         0.5,
@@ -498,7 +506,17 @@ const KeralMapAnalyzer = () => {
       optimalLocationsLayerRef.current = plotOptimalLocations(map, locations);
     } catch (error) {
       console.error('Error finding optimal locations:', error);
-      alert('An error occurred while finding optimal locations. Please try with fewer stations or a smaller area.');
+      
+      // Provide helpful error messages
+      let errorMessage = 'An error occurred while finding optimal locations.';
+      
+      if (error.message.includes('Cannot connect')) {
+        errorMessage = error.message;
+      } else if (error.message.includes('not running')) {
+        errorMessage = 'Python backend is not running.\n\nPlease:\n1. Open terminal\n2. Navigate to "backend" folder\n3. Run "start.bat"';
+      }
+      
+      alert(errorMessage);
     }
   };
 

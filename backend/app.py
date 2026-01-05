@@ -1,0 +1,326 @@
+"""
+Flask API for finding optimal EV charging station locations
+Uses spatial indexing and numpy for fast computation
+"""
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import numpy as np
+from scipy.spatial import KDTree
+import time
+import math
+
+app = Flask(__name__)
+CORS(app)  # Enable CORS for Next.js frontend
+
+
+class OptimalLocationFinder:
+    """
+    Find optimal EV charging station locations using cost-based analysis
+    """
+    
+    def __init__(self, cells, n_stations=3, min_distance_km=0.5):
+        """
+        Initialize finder with grid cells
+        
+        Args:
+            cells: List of dicts with keys: centerLat, centerLng, cost, density, inPolygon
+            n_stations: Number of stations to place
+            min_distance_km: Minimum distance between stations
+        """
+        # Filter to polygon cells only
+        self.polygon_cells = [c for c in cells if c.get('inPolygon', False)]
+        self.original_cells = cells
+        self.n_stations = n_stations
+        self.min_distance_m = min_distance_km * 1000
+        self.influence_radius = 5000  # 5km
+        
+        if not self.polygon_cells:
+            raise ValueError("No cells found inside polygon")
+        
+        # Extract coordinates and costs
+        self.coords = np.array([[c['centerLat'], c['centerLng']] for c in self.polygon_cells])
+        self.costs = np.array([c['cost'] for c in self.polygon_cells])
+        self.densities = np.array([c.get('density', 0) for c in self.polygon_cells])
+        
+        # Build KDTree for fast spatial queries
+        self.kdtree = KDTree(self.coords)
+        
+        print(f"✓ Initialized with {len(self.polygon_cells)} polygon cells")
+        print(f"✓ Building spatial index with KDTree...")
+    
+    def haversine_distance(self, lat1, lon1, lat2, lon2):
+        """
+        Calculate distance in meters using Haversine formula
+        Vectorized for NumPy arrays
+        """
+        R = 6371000  # Earth radius in meters
+        
+        if isinstance(lat1, np.ndarray):
+            # Vectorized version
+            phi1 = np.radians(lat1)
+            phi2 = np.radians(lat2)
+            dphi = np.radians(lat2 - lat1)
+            dlambda = np.radians(lon2 - lon1)
+            
+            a = np.sin(dphi/2)**2 + np.cos(phi1) * np.cos(phi2) * np.sin(dlambda/2)**2
+            return 2 * R * np.arctan2(np.sqrt(a), np.sqrt(1-a))
+        else:
+            # Scalar version
+            phi1 = math.radians(lat1)
+            phi2 = math.radians(lat2)
+            dphi = math.radians(lat2 - lat1)
+            dlambda = math.radians(lon2 - lon1)
+            
+            a = math.sin(dphi/2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda/2)**2
+            return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    
+    def degrees_to_meters(self, degrees):
+        """Convert degrees to approximate meters (at equator)"""
+        return degrees * 111320
+    
+    def meters_to_degrees(self, meters):
+        """Convert meters to approximate degrees (at equator)"""
+        return meters / 111320
+    
+    def calculate_score(self, candidate_idx, placed_stations):
+        """
+        Calculate suitability score for a candidate location
+        Lower score = better location
+        
+        Score = Base Cost + Proximity Penalty - Density Bonus
+        """
+        candidate = self.polygon_cells[candidate_idx]
+        score = candidate['cost']  # Base cost (lower is better)
+        
+        # Penalty for proximity to already placed stations
+        for station in placed_stations:
+            dist = self.haversine_distance(
+                candidate['centerLat'], candidate['centerLng'],
+                station['latitude'], station['longitude']
+            )
+            if dist < self.influence_radius:
+                # Closer = higher penalty
+                penalty = (1 - dist / self.influence_radius) * 1000
+                score += penalty
+        
+        # Reward for high density coverage using KDTree
+        radius_degrees = self.meters_to_degrees(self.influence_radius)
+        nearby_indices = self.kdtree.query_ball_point(
+            [candidate['centerLat'], candidate['centerLng']], 
+            radius_degrees
+        )
+        
+        total_density = self.densities[nearby_indices].sum()
+        if total_density > 0:
+            # Higher density = lower score (better)
+            density_bonus = np.log(total_density + 1) * 10
+            score -= density_bonus
+        
+        return score, total_density
+    
+    def find_optimal_locations(self):
+        """
+        Iteratively find n optimal locations
+        Returns list of optimal station locations with metadata
+        """
+        print(f"\n=== FINDING {self.n_stations} OPTIMAL LOCATIONS ===")
+        
+        optimal_locations = []
+        
+        for station_num in range(self.n_stations):
+            print(f"\n--- Station {station_num + 1}/{self.n_stations} ---")
+            
+            best_idx = None
+            best_score = float('inf')
+            best_density = 0
+            
+            # Sample candidates for performance (limit to 500 evaluations)
+            n_candidates = min(500, len(self.polygon_cells))
+            if len(self.polygon_cells) > n_candidates:
+                candidate_indices = np.random.choice(
+                    len(self.polygon_cells), 
+                    n_candidates, 
+                    replace=False
+                )
+            else:
+                candidate_indices = np.arange(len(self.polygon_cells))
+            
+            print(f"Evaluating {len(candidate_indices)} candidates...")
+            
+            for idx in candidate_indices:
+                candidate = self.polygon_cells[idx]
+                
+                # Check minimum distance constraint
+                too_close = False
+                for station in optimal_locations:
+                    dist = self.haversine_distance(
+                        candidate['centerLat'], candidate['centerLng'],
+                        station['latitude'], station['longitude']
+                    )
+                    if dist < self.min_distance_m:
+                        too_close = True
+                        break
+                
+                if too_close:
+                    continue
+                
+                # Calculate score
+                score, density = self.calculate_score(idx, optimal_locations)
+                
+                if score < best_score:
+                    best_score = score
+                    best_idx = idx
+                    best_density = density
+            
+            if best_idx is None:
+                print(f"⚠ Could not place station {station_num + 1}")
+                break
+            
+            # Add optimal location
+            cell = self.polygon_cells[best_idx]
+            location = {
+                'stationNumber': station_num + 1,
+                'latitude': float(cell['centerLat']),
+                'longitude': float(cell['centerLng']),
+                'cost': float(cell['cost']),
+                'score': float(best_score),
+                'density': float(best_density),
+                'nearestStationDistance': float(cell.get('nearestStationDistance', 0)),
+                'adoptionLikelihood': float(cell.get('adoptionLikelihood', 0))
+            }
+            optimal_locations.append(location)
+            
+            print(f"✓ Placed at ({location['latitude']:.6f}, {location['longitude']:.6f})")
+            print(f"  Cost: {location['cost']:.2f} | Score: {location['score']:.2f} | Density: {location['density']:.2e}")
+            
+            # Update costs for next iteration
+            if station_num < self.n_stations - 1:
+                self._update_costs(location)
+        
+        print(f"\n✓ FOUND {len(optimal_locations)} OPTIMAL LOCATIONS")
+        return optimal_locations
+    
+    def _update_costs(self, new_station):
+        """Update grid costs based on newly placed station"""
+        radius_degrees = self.meters_to_degrees(self.influence_radius)
+        MAX_COST_INCREASE = 100
+        
+        # Find nearby cells using KDTree
+        nearby_indices = self.kdtree.query_ball_point(
+            [new_station['latitude'], new_station['longitude']], 
+            radius_degrees
+        )
+        
+        for idx in nearby_indices:
+            cell = self.polygon_cells[idx]
+            dist = self.haversine_distance(
+                cell['centerLat'], cell['centerLng'],
+                new_station['latitude'], new_station['longitude']
+            )
+            
+            if dist <= self.influence_radius:
+                cost_increase = MAX_COST_INCREASE * (1 - dist / self.influence_radius)
+                cell['cost'] += cost_increase
+                self.costs[idx] = cell['cost']
+
+
+@app.route('/api/find-optimal-locations', methods=['POST'])
+def find_optimal_locations():
+    """
+    API endpoint to find optimal EV charging station locations
+    
+    Request body:
+    {
+        "cells": [...],       // Grid cells with cost data
+        "n": 3,               // Number of stations
+        "minDistanceKm": 0.5
+    }
+    
+    Response:
+    {
+        "locations": [...],
+        "executionTime": 1.23,
+        "cellsProcessed": 500
+    }
+    """
+    try:
+        data = request.json
+        cells = data.get('cells', [])
+        n = data.get('n', 3)
+        min_distance_km = data.get('minDistanceKm', 0.5)
+        
+        if not cells:
+            return jsonify({'error': 'No cells provided'}), 400
+        
+        if n <= 0:
+            return jsonify({'error': 'Number of stations must be > 0'}), 400
+        
+        # Measure execution time
+        start_time = time.time()
+        
+        print(f"\n{'='*60}")
+        print(f"New request: Find {n} stations from {len(cells)} cells")
+        print(f"{'='*60}")
+        
+        # Find optimal locations
+        finder = OptimalLocationFinder(cells, n, min_distance_km)
+        locations = finder.find_optimal_locations()
+        
+        execution_time = time.time() - start_time
+        
+        print(f"\n✓ Execution time: {execution_time:.3f}s")
+        print(f"✓ Cells processed: {len(finder.polygon_cells)}")
+        
+        return jsonify({
+            'success': True,
+            'locations': locations,
+            'executionTime': round(execution_time, 3),
+            'cellsProcessed': len(finder.polygon_cells),
+            'locationsFound': len(locations)
+        })
+        
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'service': 'Optimal Location Finder API',
+        'version': '1.0'
+    })
+
+
+@app.route('/', methods=['GET'])
+def index():
+    """API documentation"""
+    return jsonify({
+        'service': 'EV Charging Station Optimal Location Finder',
+        'version': '1.0',
+        'endpoints': {
+            'POST /api/find-optimal-locations': 'Find optimal station locations',
+            'GET /health': 'Health check',
+            'GET /': 'API documentation'
+        },
+        'example_request': {
+            'cells': [{'centerLat': 10.0, 'centerLng': 76.0, 'cost': 50, 'density': 1000, 'inPolygon': True}],
+            'n': 3,
+            'minDistanceKm': 0.5
+        }
+    })
+
+
+if __name__ == '__main__':
+    print("Starting Flask API server...")
+    print("http://localhost:5000")
+    print("Press Ctrl+C to stop\n")
+    app.run(debug=True, port=5000)
