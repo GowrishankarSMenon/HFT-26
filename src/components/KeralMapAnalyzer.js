@@ -504,20 +504,62 @@ const KeralMapAnalyzer = () => {
       }
 
       optimalLocationsLayerRef.current = plotOptimalLocations(map, locations);
+
+      // NEW: Auto-zoom to fit all optimal regions
+      zoomToOptimalRegions(map, locations);
     } catch (error) {
       console.error('Error finding optimal locations:', error);
-      
+
       // Provide helpful error messages
       let errorMessage = 'An error occurred while finding optimal locations.';
-      
+
       if (error.message.includes('Cannot connect')) {
         errorMessage = error.message;
       } else if (error.message.includes('not running')) {
         errorMessage = 'Python backend is not running.\n\nPlease:\n1. Open terminal\n2. Navigate to "backend" folder\n3. Run "start.bat"';
       }
-      
+
       alert(errorMessage);
     }
+  };
+
+  /**
+   * Zoom map to fit all optimal regions in view
+   */
+  const zoomToOptimalRegions = (map, locations) => {
+    if (!locations || locations.length === 0) return;
+
+    const isRegion = locations[0]?.type === 'region';
+
+    if (isRegion) {
+      // Collect all bounds from all regions
+      const allBounds = locations.flatMap(loc => [
+        [loc.bounds.minLat, loc.bounds.minLng],
+        [loc.bounds.maxLat, loc.bounds.maxLng]
+      ]);
+
+      // Create combined bounds
+      const combinedBounds = L.latLngBounds(allBounds);
+
+      // Zoom to fit all regions
+      map.fitBounds(combinedBounds, {
+        padding: [50, 50],
+        maxZoom: 13,
+        animate: true,
+        duration: 1.0
+      });
+    } else {
+      // Point locations
+      const coords = locations.map(loc => [loc.latitude, loc.longitude]);
+      map.fitBounds(L.latLngBounds(coords), {
+        padding: [50, 50],
+        maxZoom: 13,
+        animate: true,
+        duration: 1.0
+      });
+    }
+
+    console.log('✓ Auto-zoomed to optimal regions');
   };
 
   const handleToggleHeatMap = () => {
