@@ -338,6 +338,7 @@ const calculateDistance = (lat1, lng1, lat2, lng2) => {
 /* ----------------------------------------------------
    COST CALCULATION - CHARGING STATION PROXIMITY PENALTY
    Radial decay: Higher penalty near stations, decreasing with distance
+   INVERTED: Low cost = far from stations (good), High cost = near stations (bad)
 ---------------------------------------------------- */
 export const calculateChargingStationProximityCost = (cells, chargingStations) => {
   if (!chargingStations || chargingStations.length === 0) {
@@ -352,7 +353,7 @@ export const calculateChargingStationProximityCost = (cells, chargingStations) =
   console.log('\n=== APPLYING CHARGING STATION PROXIMITY PENALTIES ===');
   console.log(`Processing ${cells.length} cells based on ${chargingStations.length} charging stations`);
   console.log(`Penalty parameters: Max distance = ${MAX_PENALTY_DISTANCE} km, Max penalty = ${MAX_PENALTY_COST}`);
-  console.log(`Penalty model: Radial decay (highest at center, decreases with distance)\n`);
+  console.log(`Cost model: INVERTED - Low cost = far from stations (good), High cost = near stations (bad)\n`);
 
   cells.forEach((cell, idx) => {
     let minDistance = Infinity;
@@ -369,13 +370,19 @@ export const calculateChargingStationProximityCost = (cells, chargingStations) =
     });
 
     // Calculate penalty using radial decay model
-    // Penalty decreases as distance from charging station increases
+    // INVERTED: Cells near stations get HIGH POSITIVE cost (bad for new stations)
+    // Cells far from stations get LOW/NEGATIVE cost (good for new stations)
     if (minDistance <= MAX_PENALTY_DISTANCE) {
       // Quadratic decay: penalty² decreases with distance
-      // This creates a steeper drop-off near the station
       const distanceRatio = minDistance / MAX_PENALTY_DISTANCE; // 0 (at station) to 1 (at max distance)
       const penaltyRatio = 1 - Math.pow(distanceRatio, 2); // Quadratic decay
       cell.cost += Math.round(penaltyRatio * MAX_PENALTY_COST);
+    } else {
+      // Cells far from stations get NEGATIVE cost (good for placement)
+      // The farther, the more negative (better)
+      const excessDistance = minDistance - MAX_PENALTY_DISTANCE;
+      const negativeBonus = Math.min(50, excessDistance * 10); // Cap at -50
+      cell.cost -= Math.round(negativeBonus);
     }
 
     cell.nearestStationDistance = minDistance;

@@ -333,7 +333,8 @@ export const findOptimalLocations = async (cells, n, minDistanceKm = 0.5, onProg
 };
 
 /**
- * Plot optimal locations on the map with highly visible markers
+ * Plot optimal locations on the map
+ * Handles both single-point locations and region-based responses
  */
 export const plotOptimalLocations = (map, locations) => {
     if (!locations || locations.length === 0) {
@@ -344,178 +345,285 @@ export const plotOptimalLocations = (map, locations) => {
     const layer = L.layerGroup();
 
     locations.forEach((location, i) => {
-        // Create a highly visible pulsing marker with icon
-        const icon = L.divIcon({
-            className: 'optimal-location-marker',
-            html: `<div style="
-                position: relative;
-                width: 50px;
-                height: 50px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            ">
-                <!-- Pulsing ring effect -->
-                <div style="
-                    position: absolute;
-                    width: 50px;
-                    height: 50px;
-                    background: rgba(34, 197, 94, 0.3);
-                    border: 3px solid #22c55e;
-                    border-radius: 50%;
-                    animation: pulse 2s infinite;
-                "></div>
-                
-                <!-- Main marker body -->
-                <div style="
-                    position: relative;
-                    width: 30px;
-                    height: 30px;
+        // Check if this is a region response (new format) or point location (old format)
+        const isRegion = location.type === 'region' && location.cells && location.cells.length > 0;
+
+        if (isRegion) {
+            // NEW: Plot region as highlighted area
+            console.log(`Plotting region #${location.stationNumber} with ${location.cellCount} cells`);
+
+            // Create polygon from all cells in the region
+            const regionPolygon = location.cells.map(cell => [cell.lat, cell.lng]);
+
+            // Calculate convex hull or use bounds for simpler visualization
+            const bounds = location.bounds;
+
+            // Create a semi-transparent overlay for the region
+            const regionOverlay = L.rectangle(
+                [
+                    [bounds.minLat, bounds.minLng],
+                    [bounds.maxLat, bounds.maxLng]
+                ],
+                {
+                    color: '#22c55e',
+                    weight: 3,
+                    fillColor: '#22c55e',
+                    fillOpacity: 0.25,
+                    className: 'optimal-region-overlay'
+                }
+            );
+
+            // Add pulsing animation via CSS
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes region-pulse {
+                    0%, 100% { opacity: 0.25; }
+                    50% { opacity: 0.4; }
+                }
+                .optimal-region-overlay {
+                    animation: region-pulse 2s infinite;
+                }
+            `;
+            if (!document.getElementById('region-pulse-style')) {
+                style.id = 'region-pulse-style';
+                document.head.appendChild(style);
+            }
+
+            // Calculate centroid for label placement
+            const centroidLat = (bounds.minLat + bounds.maxLat) / 2;
+            const centroidLng = (bounds.minLng + bounds.maxLng) / 2;
+
+            // Create label marker at centroid
+            const labelIcon = L.divIcon({
+                className: 'optimal-region-label',
+                html: `<div style="
                     background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-                    border: 4px solid white;
-                    border-radius: 50%;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.3), 0 0 20px rgba(34, 197, 94, 0.6);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
                     color: white;
+                    padding: 8px 16px;
+                    border-radius: 20px;
                     font-weight: bold;
                     font-size: 14px;
-                    z-index: 1000;
-                ">${i + 1}</div>
-                
-                <!-- Star icon on top -->
-                <div style="
-                    position: absolute;
-                    top: -8px;
-                    right: -8px;
-                    width: 20px;
-                    height: 20px;
-                    background: #fbbf24;
-                    border: 2px solid white;
-                    border-radius: 50%;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                    white-space: nowrap;
+                    border: 3px solid white;
+                ">
+                    ⭐ Optimal Region #${location.stationNumber}
+                </div>`,
+                iconSize: [150, 40],
+                iconAnchor: [75, 20]
+            });
+
+            const labelMarker = L.marker([centroidLat, centroidLng], {
+                icon: labelIcon,
+                zIndexOffset: 10000
+            });
+
+            // Create detailed popup
+            regionOverlay.bindPopup(
+                `<div style="font-family: system-ui; min-width: 260px;">
+                    <div style="background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; padding: 12px; margin: -10px -10px 10px -10px; border-radius: 8px 8px 0 0;">
+                        <div style="font-size: 18px; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 24px;">⭐</span>
+                            <span>Optimal Region #${location.stationNumber}</span>
+                        </div>
+                        <div style="font-size: 12px; opacity: 0.9; margin-top: 4px;">
+                            RECOMMENDED CHARGING STATION AREA
+                        </div>
+                    </div>
+                    
+                    <div style="padding: 8px 0;">
+                        <div style="display: flex; justify-content: space-between; margin: 8px 0; padding: 8px; background: #f0fdf4; border-radius: 6px;">
+                            <span style="color: #166534; font-weight: 600;">Cost:</span>
+                            <strong style="color: #16a34a; font-size: 16px;">${location.cost.toFixed(2)}</strong>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; margin: 6px 0; padding: 6px 0; border-bottom: 1px solid #e5e7eb;">
+                            <span style="color: #6b7280;">Region Size:</span>
+                            <strong style="color: #1f2937;">${location.cellCount} cells</strong>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; margin: 6px 0; padding: 6px 0; border-bottom: 1px solid #e5e7eb;">
+                            <span style="color: #6b7280;">Avg Population Density:</span>
+                            <strong style="color: #1f2937;">${location.avgDensity.toExponential(2)}</strong>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; margin: 6px 0; padding: 6px 0; border-bottom: 1px solid #e5e7eb;">
+                            <span style="color: #6b7280;">Avg Nearest Station:</span>
+                            <strong style="color: #1f2937;">${location.avgNearestStation.toFixed(3)} km</strong>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 12px; padding: 10px; background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); border-radius: 6px; text-align: center; border: 2px solid #22c55e;">
+                        <span style="font-size: 13px; font-weight: 700; color: #16a34a;">
+                            ✓ OPTIMAL REGION
+                        </span>
+                        <div style="font-size: 10px; color: #166534; margin-top: 4px;">
+                            All cells in this region have the same optimal cost
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 8px; padding: 6px; background: #f9fafb; border-radius: 4px; text-align: center;">
+                        <div style="font-size: 10px; color: #6b7280; font-weight: 500;">BOUNDS</div>
+                        <div style="font-size: 11px; color: #1f2937; font-family: monospace; margin-top: 2px;">
+                            (${bounds.minLat.toFixed(4)}, ${bounds.minLng.toFixed(4)}) to<br/>
+                            (${bounds.maxLat.toFixed(4)}, ${bounds.maxLng.toFixed(4)})
+                        </div>
+                    </div>
+                </div>`,
+                {
+                    maxWidth: 300,
+                    className: 'optimal-region-popup'
+                }
+            );
+
+            labelMarker.bindPopup(regionOverlay.getPopup());
+
+            layer.addLayer(regionOverlay);
+            layer.addLayer(labelMarker);
+
+        } else {
+            // OLD: Plot single point location (backward compatibility)
+            const icon = L.divIcon({
+                className: 'optimal-location-marker',
+                html: `<div style="
+                    position: relative;
+                    width: 50px;
+                    height: 50px;
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    font-size: 12px;
-                    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-                    z-index: 1001;
-                ">⭐</div>
-            </div>
-            <style>
-                @keyframes pulse {
-                    0% {
-                        transform: scale(1);
-                        opacity: 1;
+                ">
+                    <!-- Pulsing ring effect -->
+                    <div style="
+                        position: absolute;
+                        width: 50px;
+                        height: 50px;
+                        background: rgba(34, 197, 94, 0.3);
+                        border: 3px solid #22c55e;
+                        border-radius: 50%;
+                        animation: pulse 2s infinite;
+                    "></div>
+                    
+                    <!-- Main marker body -->
+                    <div style="
+                        position: relative;
+                        width: 30px;
+                        height: 30px;
+                        background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+                        border: 4px solid white;
+                        border-radius: 50%;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.3), 0 0 20px rgba(34, 197, 94, 0.6);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        color: white;
+                        font-weight: bold;
+                        font-size: 14px;
+                        z-index: 1000;
+                    ">${i + 1}</div>
+                    
+                    <!-- Star icon on top -->
+                    <div style="
+                        position: absolute;
+                        top: -8px;
+                        right: -8px;
+                        width: 20px;
+                        height: 20px;
+                        background: #fbbf24;
+                        border: 2px solid white;
+                        border-radius: 50%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 12px;
+                        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                        z-index: 1001;
+                    ">⭐</div>
+                </div>
+                <style>
+                    @keyframes pulse {
+                        0% {
+                            transform: scale(1);
+                            opacity: 1;
+                        }
+                        50% {
+                            transform: scale(1.3);
+                            opacity: 0.5;
+                        }
+                        100% {
+                            transform: scale(1);
+                            opacity: 1;
+                        }
                     }
-                    50% {
-                        transform: scale(1.3);
-                        opacity: 0.5;
+                    .optimal-location-marker {
+                        z-index: 10000 !important;
                     }
-                    100% {
-                        transform: scale(1);
-                        opacity: 1;
-                    }
+                </style>`,
+                iconSize: [50, 50],
+                iconAnchor: [25, 25]
+            });
+
+            const divMarker = L.marker([location.latitude, location.longitude], {
+                icon,
+                zIndexOffset: 10000
+            });
+
+            divMarker.bindPopup(
+                `<div style="font-family: system-ui; min-width: 240px;">
+                    <div style="background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; padding: 12px; margin: -10px -10px 10px -10px; border-radius: 8px 8px 0 0;">
+                        <div style="font-size: 18px; font-weight: bold; display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 24px;">⭐</span>
+                            <span>Station #${location.stationNumber || (i + 1)}</span>
+                        </div>
+                        <div style="font-size: 12px; opacity: 0.9; margin-top: 4px;">
+                            NEW CHARGING STATION
+                        </div>
+                    </div>
+                    
+                    <div style="padding: 8px 0;">
+                        <div style="display: flex; justify-content: space-between; margin: 8px 0; padding: 8px; background: #f0fdf4; border-radius: 6px;">
+                            <span style="color: #166534; font-weight: 600;">Cell Cost:</span>
+                            <strong style="color: #16a34a; font-size: 16px;">${location.cost.toFixed(2)}</strong>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; margin: 6px 0; padding: 6px 0; border-bottom: 1px solid #e5e7eb;">
+                            <span style="color: #6b7280;">Nearest Existing Station:</span>
+                            <strong style="color: #1f2937;">${location.nearestStationDistance ? location.nearestStationDistance.toFixed(3) : '0.000'} km</strong>
+                        </div>
+                        
+                        ${location.density > 0 ? `
+                        <div style="display: flex; justify-content: space-between; margin: 6px 0; padding: 6px 0; border-bottom: 1px solid #e5e7eb;">
+                            <span style="color: #6b7280;">Population Density:</span>
+                            <strong style="color: #1f2937;">${location.density.toExponential(2)}</strong>
+                        </div>
+                        ` : ''}
+                    </div>
+                    
+                    <div style="margin-top: 12px; padding: 10px; background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); border-radius: 6px; text-align: center; border: 2px solid #22c55e;">
+                        <span style="font-size: 13px; font-weight: 700; color: #16a34a;">
+                            ✓ OPTIMAL PLACEMENT
+                        </span>
+                    </div>
+                    
+                    <div style="margin-top: 8px; padding: 6px; background: #f9fafb; border-radius: 4px; text-align: center;">
+                        <div style="font-size: 10px; color: #6b7280; font-weight: 500;">COORDINATES</div>
+                        <div style="font-size: 11px; color: #1f2937; font-family: monospace; margin-top: 2px;">
+                            ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}
+                        </div>
+                    </div>
+                </div>`,
+                {
+                    maxWidth: 280,
+                    className: 'optimal-location-popup'
                 }
-                .optimal-location-marker {
-                    z-index: 10000 !important;
-                }
-            </style>`,
-            iconSize: [50, 50],
-            iconAnchor: [25, 25]
-        });
+            );
 
-        const divMarker = L.marker([location.latitude, location.longitude], {
-            icon,
-            zIndexOffset: 10000 // Ensure marker is on top
-        });
-
-        divMarker.bindPopup(
-            `<div style="font-family: system-ui; min-width: 240px;">
-                <div style="background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; padding: 12px; margin: -10px -10px 10px -10px; border-radius: 8px 8px 0 0;">
-                    <div style="font-size: 18px; font-weight: bold; display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 24px;">⭐</span>
-                        <span>Station #${location.stationNumber || (i + 1)}</span>
-                    </div>
-                    <div style="font-size: 12px; opacity: 0.9; margin-top: 4px;">
-                        NEW CHARGING STATION ${location.stationNumber ? `(Placed ${location.stationNumber === 1 ? '1st' : location.stationNumber === 2 ? '2nd' : location.stationNumber === 3 ? '3rd' : location.stationNumber + 'th'})` : ''}
-                    </div>
-                </div>
-                
-                <div style="padding: 8px 0;">
-                    <div style="display: flex; justify-content: space-between; margin: 8px 0; padding: 8px; background: #f0fdf4; border-radius: 6px;">
-                        <span style="color: #166534; font-weight: 600;">Cell Cost:</span>
-                        <strong style="color: #16a34a; font-size: 16px;">${location.cost.toFixed(2)}</strong>
-                    </div>
-                    
-                    ${location.overallBenefit !== undefined ? `
-                    <div style="display: flex; justify-content: space-between; margin: 8px 0; padding: 8px; background: #eff6ff; border-radius: 6px;">
-                        <span style="color: #1e40af; font-weight: 600;">Overall Benefit:</span>
-                        <strong style="color: #2563eb; font-size: 16px;">${location.overallBenefit.toFixed(2)}</strong>
-                    </div>
-                    ` : ''}
-                    
-                    ${location.cellsAffected !== undefined ? `
-                    <div style="display: flex; justify-content: space-between; margin: 6px 0; padding: 6px 0; border-bottom: 1px solid #e5e7eb;">
-                        <span style="color: #6b7280;">Cells Benefited:</span>
-                        <strong style="color: #1f2937;">${location.cellsAffected} cells</strong>
-                    </div>
-                    ` : ''}
-                    
-                    ${location.averageBenefit !== undefined ? `
-                    <div style="display: flex; justify-content: space-between; margin: 6px 0; padding: 6px 0; border-bottom: 1px solid #e5e7eb;">
-                        <span style="color: #6b7280;">Avg Benefit/Cell:</span>
-                        <strong style="color: #1f2937;">${location.averageBenefit.toFixed(2)}</strong>
-                    </div>
-                    ` : ''}
-                    
-                    <div style="display: flex; justify-content: space-between; margin: 6px 0; padding: 6px 0; border-bottom: 1px solid #e5e7eb;">
-                        <span style="color: #6b7280;">Nearest Existing Station:</span>
-                        <strong style="color: #1f2937;">${location.nearestStationDistance ? location.nearestStationDistance.toFixed(3) : '0.000'} km</strong>
-                    </div>
-                    
-                    ${location.density > 0 ? `
-                    <div style="display: flex; justify-content: space-between; margin: 6px 0; padding: 6px 0; border-bottom: 1px solid #e5e7eb;">
-                        <span style="color: #6b7280;">Population Density:</span>
-                        <strong style="color: #1f2937;">${location.density.toExponential(2)}</strong>
-                    </div>
-                    ` : ''}
-                    
-                    ${location.adoptionLikelihood > 0 ? `
-                    <div style="display: flex; justify-content: space-between; margin: 6px 0; padding: 6px 0; border-bottom: 1px solid #e5e7eb;">
-                        <span style="color: #6b7280;">Adoption Score:</span>
-                        <strong style="color: #1f2937;">${location.adoptionLikelihood.toExponential(2)}</strong>
-                    </div>
-                    ` : ''}
-                </div>
-                
-                <div style="margin-top: 12px; padding: 10px; background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); border-radius: 6px; text-align: center; border: 2px solid #22c55e;">
-                    <span style="font-size: 13px; font-weight: 700; color: #16a34a;">
-                        ✓ OPTIMAL PLACEMENT
-                    </span>
-                    <div style="font-size: 10px; color: #166534; margin-top: 4px;">
-                        ${location.stationNumber > 1 ? `Considers impact of ${location.stationNumber - 1} previous station${location.stationNumber > 2 ? 's' : ''}` : 'First station placement'}
-                    </div>
-                </div>
-                
-                <div style="margin-top: 8px; padding: 6px; background: #f9fafb; border-radius: 4px; text-align: center;">
-                    <div style="font-size: 10px; color: #6b7280; font-weight: 500;">COORDINATES</div>
-                    <div style="font-size: 11px; color: #1f2937; font-family: monospace; margin-top: 2px;">
-                        ${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}
-                    </div>
-                </div>
-            </div>`,
-            {
-                maxWidth: 280,
-                className: 'optimal-location-popup'
-            }
-        );
-
-        layer.addLayer(divMarker);
+            layer.addLayer(divMarker);
+        }
     });
 
     layer.addTo(map);
-    console.log(`Plotted ${locations.length} optimal locations on map`);
+    console.log(`Plotted ${locations.length} optimal ${locations[0]?.type === 'region' ? 'regions' : 'locations'} on map`);
     return layer;
 };
 

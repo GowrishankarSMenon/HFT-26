@@ -17,8 +17,7 @@ CORS(app)  # Enable CORS for Next.js frontend
 
 class OptimalLocationFinder:
     """
-    Find optimal EV charging station locations using ITERATIVE BENEFIT MAXIMIZATION
-    with dynamic COST MAP UPDATES after each placement
+    Find optimal EV charging station locations by identifying LOWEST-COST REGIONS
     """
 
     def __init__(self, cells, n_stations=3, min_distance_km=0.5):
@@ -26,312 +25,258 @@ class OptimalLocationFinder:
         Initialize finder with grid cells
 
         Args:
-            cells: List of ALL grid cells (proximal grid) with keys: centerLat, centerLng, cost, density, inPolygon
-            n_stations: Number of stations to place
-            min_distance_km: Minimum distance between stations
+            cells: List of grid cells with keys: centerLat, centerLng, cost, density, inPolygon
+            n_stations: Number of optimal regions to find
+            min_distance_km: Minimum distance between regions
         """
-        # Store all cells (for cost calculation on entire grid)
-        self.all_cells = cells
-
-        # Filter to polygon cells only (for placement constraint)
+        # Filter to polygon cells only (for placement)
         self.polygon_cells = [c for c in cells if c.get('inPolygon', False)]
-
         self.n_stations = n_stations
-        self.min_distance_m = min_distance_km * 3000
-        self.influence_radius = 5000  # 5km for existing DB stations
-        self.new_station_radius = 7500  # 7.5km for new stations (50% more)
+        self.min_distance_km = min_distance_km
 
         if not self.polygon_cells:
             raise ValueError("No cells found inside polygon")
 
-        # Extract coordinates and costs for ALL cells
-        self.all_coords = np.array(
-            [[c['centerLat'], c['centerLng']] for c in self.all_cells])
-        self.all_costs = np.array([c['cost'] for c in self.all_cells])
-
-        # Extract coordinates for polygon cells (for candidate selection)
-        self.polygon_coords = np.array(
-            [[c['centerLat'], c['centerLng']] for c in self.polygon_cells])
-        self.polygon_indices = [i for i, c in enumerate(
-            self.all_cells) if c.get('inPolygon', False)]
-        self.densities = np.array([c.get('density', 0)
-                                  for c in self.polygon_cells])
-
-        # Build KDTree for fast spatial queries on ALL cells
-        self.kdtree = KDTree(self.all_coords)
-
-        print(
-            f"✓ Initialized with {len(self.all_cells)} total cells ({len(self.polygon_cells)} in polygon)")
-        print(f"✓ Building spatial index with KDTree...")
+        print(f"✓ Initialized with {len(self.polygon_cells)} cells in polygon")
 
     def haversine_distance(self, lat1, lon1, lat2, lon2):
+        """Calculate distance in km using Haversine formula"""
+        R = 6371  # Earth radius in km
+
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        dphi = math.radians(lat2 - lat1)
+        dlambda = math.radians(lon2 - lon1)
+
+        a = math.sin(dphi/2)**2 + math.cos(phi1) * \
+            math.cos(phi2) * math.sin(dlambda/2)**2
+        return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+    def find_connected_regions(self, cells):
         """
-        Calculate distance in meters using Haversine formula
-        Vectorized for NumPy arrays
-        """
-        R = 6371000  # Earth radius in meters
-
-        if isinstance(lat1, np.ndarray):
-            # Vectorized version
-            phi1 = np.radians(lat1)
-            phi2 = np.radians(lat2)
-            dphi = np.radians(lat2 - lat1)
-            dlambda = np.radians(lon2 - lon1)
-
-            a = np.sin(dphi/2)**2 + np.cos(phi1) * \
-                np.cos(phi2) * np.sin(dlambda/2)**2
-            return 2 * R * np.arctan2(np.sqrt(a), np.sqrt(1-a))
-        else:
-            # Scalar version
-            phi1 = math.radians(lat1)
-            phi2 = math.radians(lat2)
-            dphi = math.radians(lat2 - lat1)
-            dlambda = math.radians(lon2 - lon1)
-
-            a = math.sin(dphi/2)**2 + math.cos(phi1) * \
-                math.cos(phi2) * math.sin(dlambda/2)**2
-            return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1-a))
-
-    def degrees_to_meters(self, degrees):
-        """Convert degrees to approximate meters (at equator)"""
-        return degrees * 111320
-
-    def meters_to_degrees(self, meters):
-        """Convert meters to approximate degrees (at equator)"""
-        return meters / 111320
-
-    def calculate_score(self, candidate_idx, current_costs):
-        """
-        Calculate the TOTAL GRID COST INCREASE if we place a station here
-        Higher score = better placement (more cost increase = better coverage)
-
-        This simulates placing a station and calculates how much it would
-        increase the total grid cost (ALL cells), accounting for CURRENT cost levels.
-
-        Areas with LOW current cost will get MORE benefit from a new station.
-
+        Split cells into spatially connected groups using flood-fill algorithm.
+        Two cells are connected if they are adjacent (neighbors in the grid).
+        
         Args:
-            candidate_idx: Index in polygon_cells list
-            current_costs: Current costs for ALL cells
-        """
-        candidate = self.polygon_cells[candidate_idx]
-
-        # Simulate placing station here and calculate cost increase
-        # Use new_station_radius (50% larger) for new charging stations
-        radius_degrees = self.meters_to_degrees(self.new_station_radius)
-        MAX_COST_INCREASE = 50
-
-        total_cost_increase = 0.0
-
-        # Find nearby cells using KDTree (searches ALL cells)
-        nearby_indices = self.kdtree.query_ball_point(
-            [candidate['centerLat'], candidate['centerLng']],
-            radius_degrees
-        )
-
-        for idx in nearby_indices:
-            cell = self.all_cells[idx]
-            dist = self.haversine_distance(
-                cell['centerLat'], cell['centerLng'],
-                candidate['centerLat'], candidate['centerLng']
-            )
+            cells: List of cells to group
             
-            if dist <= self.new_station_radius:
-                # Calculate how much cost this station would ADD to this cell
-                distance_ratio = dist / self.new_station_radius
-                cost_increase = MAX_COST_INCREASE * (1 - distance_ratio)
-
-                # Simulate what the new cost would be AFTER capping
-                current_cost = current_costs[idx]
-                new_cost_uncapped = current_cost + cost_increase
-                new_cost_capped = max(-100, min(100, new_cost_uncapped))
-
-                # The ACTUAL increase is the difference after capping
-                # This naturally favors low-cost areas (more room to increase)
-                actual_increase = new_cost_capped - current_cost
-
-                total_cost_increase += actual_increase
-
-        return total_cost_increase
+        Returns:
+            List of cell groups, where each group is a connected region
+        """
+        if not cells:
+            return []
+        
+        # Determine grid spacing from actual data
+        # Sample a few cells to estimate spacing
+        if len(cells) >= 2:
+            # Sort by latitude to find adjacent cells
+            sorted_cells = sorted(cells, key=lambda c: (c['centerLat'], c['centerLng']))
+            lat_diffs = []
+            lng_diffs = []
+            
+            for i in range(min(10, len(sorted_cells) - 1)):
+                lat_diff = abs(sorted_cells[i+1]['centerLat'] - sorted_cells[i]['centerLat'])
+                lng_diff = abs(sorted_cells[i+1]['centerLng'] - sorted_cells[i]['centerLng'])
+                if lat_diff > 0:
+                    lat_diffs.append(lat_diff)
+                if lng_diff > 0:
+                    lng_diffs.append(lng_diff)
+            
+            # Use median spacing
+            grid_spacing = min(
+                np.median(lat_diffs) if lat_diffs else 0.0005,
+                np.median(lng_diffs) if lng_diffs else 0.0005
+            )
+        else:
+            grid_spacing = 0.0005  # Default ~50 meters
+        
+        # Allow 1.5x spacing for diagonal adjacency
+        adjacency_threshold = grid_spacing * 1.5
+        
+        print(f"  Grid spacing detected: {grid_spacing:.6f} degrees (~{grid_spacing * 111:.0f}m)")
+        print(f"  Adjacency threshold: {adjacency_threshold:.6f} degrees")
+        
+        visited = set()
+        regions = []
+        
+        for cell in cells:
+            cell_key = (cell['centerLat'], cell['centerLng'])
+            if cell_key in visited:
+                continue
+            
+            # Start new region with flood-fill
+            region = []
+            stack = [cell]
+            
+            while stack:
+                current = stack.pop()
+                current_key = (current['centerLat'], current['centerLng'])
+                
+                if current_key in visited:
+                    continue
+                
+                visited.add(current_key)
+                region.append(current)
+                
+                # Find adjacent neighbors
+                for other in cells:
+                    other_key = (other['centerLat'], other['centerLng'])
+                    if other_key not in visited:
+                        lat_diff = abs(current['centerLat'] - other['centerLat'])
+                        lng_diff = abs(current['centerLng'] - other['centerLng'])
+                        
+                        # Adjacent if within threshold (allows diagonals)
+                        if lat_diff <= adjacency_threshold and lng_diff <= adjacency_threshold:
+                            stack.append(other)
+            
+            if region:
+                regions.append(region)
+        
+        return regions
 
     def find_optimal_locations(self):
         """
-        Iteratively find n optimal locations using COST MAXIMIZATION
-        with COST MAP UPDATES after each placement
-
+        Find optimal regions by identifying cells with LOWEST cost values
+        
         Algorithm:
-        1. For each candidate, SIMULATE placing a station there
-        2. Calculate total grid cost INCREASE it would provide
-        3. Choose location with MAXIMUM cost increase
-        4. Actually place station there
-        5. Update cost map to reflect new station's influence
-        6. Repeat for next station (which now considers previous placements)
-
-        This maximizes TOTAL grid cost by iteratively placing stations
-        where they provide maximum coverage improvement.
+        1. Sort cells by cost (ascending - lowest cost first)
+        2. For each station requested:
+           a. Find all cells with the minimum cost
+           b. Group them into a region
+           c. Exclude cells too close to already-found regions
+        3. Return region data (all cells, bounds, metadata)
         """
-        print(f"\n=== FINDING {self.n_stations} OPTIMAL LOCATIONS ===")
-        print("Using iterative cost-maximization with simulated placement effects\n")
-        print("Working on entire proximal grid but constraining placement to polygon\n")
+        print(f"\n=== FINDING {self.n_stations} OPTIMAL REGIONS ===")
+        print("Strategy: Identify regions with LOWEST cost (best for EV adoption)\n")
 
-        optimal_locations = []
-        # Keep track of current costs for ALL cells (gets updated after each placement)
-        current_costs = self.all_costs.copy()
+        optimal_regions = []
+        available_cells = self.polygon_cells.copy()
 
-        initial_total_cost = current_costs.sum()
-        print(f"Initial total grid cost: {initial_total_cost:.2f}\n")
-
-        for station_num in range(self.n_stations):
-            print(f"\n--- Station {station_num + 1}/{self.n_stations} ---")
-
-            best_idx = None
-            # Higher score = better (more cost increase)
-            best_score = -float('inf')
-
-            # Sample candidates for performance (limit to 500 evaluations)
-            n_candidates = min(500, len(self.polygon_cells))
-            if len(self.polygon_cells) > n_candidates:
-                candidate_indices = np.random.choice(
-                    len(self.polygon_cells),
-                    n_candidates,
-                    replace=False
-                )
-            else:
-                candidate_indices = np.arange(len(self.polygon_cells))
-
-            print(f"Evaluating {len(candidate_indices)} candidates...")
-            print(f"Current total grid cost: {current_costs.sum():.2f}")
-
-            for idx in candidate_indices:
-                candidate = self.polygon_cells[idx]
-
-                # Check minimum distance constraint
-                too_close = False
-                for station in optimal_locations:
-                    dist = self.haversine_distance(
-                        candidate['centerLat'], candidate['centerLng'],
-                        station['latitude'], station['longitude']
-                    )
-                    if dist < self.min_distance_m:
-                        too_close = True
-                        break
-
-                if too_close:
-                    continue
-
-                # Calculate cost increase if we place station here
-                # This simulates the station's effect on grid cost
-                score = self.calculate_score(idx, current_costs)
-
-                if score > best_score:  # Maximize cost increase
-                    best_score = score
-                    best_idx = idx
-
-            if best_idx is None:
-                print(f"⚠ Could not place station {station_num + 1}")
+        for region_num in range(self.n_stations):
+            if not available_cells:
+                print(f"⚠ No more available cells for region {region_num + 1}")
                 break
 
-            # Add optimal location
-            cell = self.polygon_cells[best_idx]
-            # Get the actual index in all_cells for this polygon cell
-            actual_idx = self.polygon_indices[best_idx]
-            location = {
-                'stationNumber': station_num + 1,
-                'latitude': float(cell['centerLat']),
-                'longitude': float(cell['centerLng']),
-                'cost': float(current_costs[actual_idx]),
-                'score': float(best_score),
-                'density': float(self.densities[best_idx]),
-                'nearestStationDistance': float(cell.get('nearestStationDistance', 0)),
-                'adoptionLikelihood': float(cell.get('adoptionLikelihood', 0))
-            }
-            optimal_locations.append(location)
+            print(f"\n--- Region {region_num + 1}/{self.n_stations} ---")
+            print(f"Available cells: {len(available_cells)}")
 
-            print(
-                f"✓ Placed at ({location['latitude']:.6f}, {location['longitude']:.6f})")
-            print(
-                f"  Current Cost: {location['cost']:.2f} | Cost Increase: {location['score']:.2f}")
+            # Find minimum cost among available cells
+            min_cost = min(cell['cost'] for cell in available_cells)
+            
+            # Get ALL cells with this minimum cost
+            min_cost_cells = [cell for cell in available_cells if cell['cost'] == min_cost]
+            
+            print(f"Minimum cost found: {min_cost:.2f}")
+            print(f"Cells with this cost: {len(min_cost_cells)}")
 
-            # UPDATE COST MAP for next iteration
-            # This is CRITICAL: new station INCREASES costs around it
-            # This represents improved coverage/service in that area
-            if station_num < self.n_stations - 1:
-                current_costs = self._update_costs_and_return(
-                    location, current_costs)
-                cost_increase = current_costs.sum() - initial_total_cost
-                print(
-                    f"  Updated cost map | New total: {current_costs.sum():.2f} (↑{cost_increase:.2f})")
+            # NEW: Split into spatially connected regions
+            connected_regions = self.find_connected_regions(min_cost_cells)
+            print(f"Connected regions found: {len(connected_regions)}")
 
-        print(f"\n✓ FOUND {len(optimal_locations)} OPTIMAL LOCATIONS")
-        final_cost = current_costs.sum()
-        total_increase = final_cost - initial_total_cost
-        print(
-            f"Total cost increase: {total_increase:.2f} ({(total_increase/initial_total_cost)*100:.1f}%)")
-        print(f"Maximized grid coverage by placing stations in underserved areas")
-        return optimal_locations
+            # Create a region object for EACH connected group
+            for region_cells in connected_regions:
+                # Calculate bounds for this specific connected region
+                lats = [cell['centerLat'] for cell in region_cells]
+                lngs = [cell['centerLng'] for cell in region_cells]
+                
+                region = {
+                    'stationNumber': len(optimal_regions) + 1,
+                    'type': 'region',
+                    'cost': float(min_cost),
+                    'cellCount': len(region_cells),
+                    'cells': [
+                        {
+                            'lat': float(cell['centerLat']),
+                            'lng': float(cell['centerLng']),
+                            'cost': float(cell['cost'])
+                        }
+                        for cell in region_cells
+                    ],
+                    'bounds': {
+                        'minLat': float(min(lats)),
+                        'maxLat': float(max(lats)),
+                        'minLng': float(min(lngs)),
+                        'maxLng': float(max(lngs))
+                    },
+                    # Additional metadata
+                    'avgDensity': float(np.mean([cell.get('density', 0) for cell in region_cells])),
+                    'avgNearestStation': float(np.mean([cell.get('nearestStationDistance', 0) for cell in region_cells]))
+                }
+                
+                optimal_regions.append(region)
+                
+                print(f"✓ Region {region['stationNumber']}: {len(region_cells)} cells")
+                print(f"  Bounds: ({region['bounds']['minLat']:.4f}, {region['bounds']['minLng']:.4f}) to ({region['bounds']['maxLat']:.4f}, {region['bounds']['maxLng']:.4f})")
 
-    def _update_costs_and_return(self, new_station, current_costs):
-        """
-        Update grid costs based on newly placed station and return updated array
+            # Remove cells that are too close to ANY of the regions we just found
+            if region_num < self.n_stations - 1:
+                # Calculate centroids of all regions we just added
+                new_available = []
+                for cell in available_cells:
+                    # Check distance to all newly added regions
+                    too_close = False
+                    for region in optimal_regions:
+                        # Use region centroid for distance check
+                        region_lats = [c['lat'] for c in region['cells']]
+                        region_lngs = [c['lng'] for c in region['cells']]
+                        centroid_lat = sum(region_lats) / len(region_lats)
+                        centroid_lng = sum(region_lngs) / len(region_lngs)
+                        
+                        dist = self.haversine_distance(
+                            cell['centerLat'], cell['centerLng'],
+                            centroid_lat, centroid_lng
+                        )
+                        if dist < self.min_distance_km:
+                            too_close = True
+                            break
+                    
+                    if not too_close:
+                        new_available.append(cell)
+                
+                removed = len(available_cells) - len(new_available)
+                available_cells = new_available
+                print(f"  Removed {removed} cells within {self.min_distance_km} km of all regions")
+                
+                # Break if we've found enough regions
+                if len(optimal_regions) >= self.n_stations:
+                    break
 
-        Each new station INCREASES the cost of nearby cells in the ENTIRE grid,
-        representing improved coverage/service. Higher cost = better served area.
-        Uses new_station_radius (50% larger than DB stations).
-
-        Args:
-            new_station: Dict with latitude, longitude
-            current_costs: Current costs for ALL cells
-        """
-        radius_degrees = self.meters_to_degrees(self.new_station_radius)
-        MAX_COST_INCREASE = 50
-
-        # Make a copy to avoid modifying reference
-        updated_costs = current_costs.copy()
-
-        # Find nearby cells using KDTree (searches ALL cells)
-        nearby_indices = self.kdtree.query_ball_point(
-            [new_station['latitude'], new_station['longitude']],
-            radius_degrees
-        )
-
-        for idx in nearby_indices:
-            cell = self.all_cells[idx]
-            dist = self.haversine_distance(
-                cell['centerLat'], cell['centerLng'],
-                new_station['latitude'], new_station['longitude']
-            )
-
-            if dist <= self.new_station_radius:
-                # Cost increases with proximity to new station
-                cost_increase = MAX_COST_INCREASE * \
-                    (1 - dist / self.new_station_radius)
-                updated_costs[idx] += cost_increase
-                # Cap costs at -100 to 100
-                updated_costs[idx] = max(-100, min(100, updated_costs[idx]))
-
-        return updated_costs
+        print(f"\n✓ FOUND {len(optimal_regions)} OPTIMAL REGIONS")
+        print(f"Total cells in optimal regions: {sum(r['cellCount'] for r in optimal_regions)}")
+        
+        return optimal_regions
 
 
 @app.route('/api/find-optimal-locations', methods=['POST'])
 def find_optimal_locations():
     """
-    API endpoint to find optimal EV charging station locations
+    API endpoint to find optimal EV charging station regions
 
-    Uses iterative cost-maximization by simulating each station's effect.
-    Works on the entire proximal grid for cost calculation but constrains
-    station placement to within the polygon only.
+    Identifies regions with the LOWEST cost values (best for EV adoption).
+    Returns all cells in each optimal region for visualization.
 
     Request body:
     {
-        "cells": [...],       // ALL grid cells (proximal grid) with inPolygon flag
-        "n": 3,               // Number of stations
-        "minDistanceKm": 0.5
+        "cells": [...],       // Grid cells with inPolygon flag
+        "n": 3,               // Number of optimal regions to find
+        "minDistanceKm": 0.5  // Minimum distance between regions
     }
 
     Response:
     {
-        "locations": [...],
-        "executionTime": 1.23,
+        "locations": [
+            {
+                "stationNumber": 1,
+                "type": "region",
+                "cost": -7.00,
+                "cellCount": 15,
+                "cells": [{"lat": 10.774, "lng": 76.301, "cost": -7.00}, ...],
+                "bounds": {"minLat": 10.770, "maxLat": 10.780, "minLng": 76.300, "maxLng": 76.310},
+                "avgDensity": 5000.0,
+                "avgNearestStation": 2.5
+            }
+        ],
+        "executionTime": 0.123,
         "cellsProcessed": 500
     }
     """
@@ -395,15 +340,15 @@ def health_check():
 def index():
     """API documentation"""
     return jsonify({
-        'service': 'EV Charging Station Optimal Location Finder',
-        'version': '1.0',
+        'service': 'EV Charging Station Optimal Region Finder',
+        'version': '2.0',
         'endpoints': {
-            'POST /api/find-optimal-locations': 'Find optimal station locations',
+            'POST /api/find-optimal-locations': 'Find optimal regions (lowest cost areas)',
             'GET /health': 'Health check',
             'GET /': 'API documentation'
         },
         'example_request': {
-            'cells': [{'centerLat': 10.0, 'centerLng': 76.0, 'cost': 50, 'density': 1000, 'inPolygon': True}],
+            'cells': [{'centerLat': 10.0, 'centerLng': 76.0, 'cost': -5.0, 'density': 1000, 'inPolygon': True}],
             'n': 3,
             'minDistanceKm': 0.5
         }
